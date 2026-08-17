@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# 工具生成
+.trae-html-share-packages/
+
+# 系统与日志
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,927 @@
+// ===================== AI 俄罗斯轮盘大逃杀 - 前端应用 =====================
+const STATE = {
+    mode: null,
+    currentMode: "classic",
+    currentGameId: null,
+    currentTournamentId: null,
+    wsGame: null,
+    wsTournament: null,
+    players: [],
+    autoPlayTimer: null,
+    isAutoPlaying: false,
+    _lastEventCount: 0,
+    _prevScoreKey: "",
+    humanName: null,       // 人类玩家名（观战模式为 null，用于私有信息过滤）
+    arenaPick: { red: null, blue: null },   // 竞技场选边
+};
+
+// 道具元数据（与 engine/items.py ITEM_REGISTRY 对应）
+const ITEM_META = {
+    magnifier:      { name: "放大镜", icon: "🔍", desc: "查看当前弹是实是空（仅自己可见）" },
+    beer:           { name: "啤酒",   icon: "🍺", desc: "退掉当前弹，退出的弹型公开" },
+    cigarette:      { name: "香烟",   icon: "🚬", desc: "回复 1 电荷（不超上限）" },
+    handsaw:        { name: "手锯",   icon: "🪚", desc: "下次实弹伤害 ×2（任意射击后清除）" },
+    handcuff:       { name: "手铐",   icon: "🔗", desc: "跳过对方下一回合（不可连续铐同一人）" },
+    inverter:       { name: "反转器", icon: "🔄", desc: "当前弹实↔空互换（结果仅自己可见）" },
+    burner_phone:   { name: "电话",   icon: "📱", desc: "随机获知一发未来弹的位置与类型" },
+    expired_medicine: { name: "过期药", icon: "💊", desc: "五五开：+2 电荷 或 −1 电荷" },
+    adrenaline:     { name: "肾上腺素", icon: "💉", desc: "偷取对方一个道具并立即使用" },
+};
+
+// ===================== 工具函数 =====================
+const $ = (sel, ctx = document) => ctx.querySelector(sel);
+const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+
+function showToast(msg, type = "info") {
+    let container = $(".toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.className = "toast-container";
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+}
+
+// ===================== 动画辅助 =====================
+function triggerGunRecoil() {
+    const icon = document.querySelector(".gun-icon");
+    if (icon) {
+        icon.classList.remove("gun-recoil");
+        void icon.offsetWidth;
+        icon.classList.add("gun-recoil");
+    }
+}
+
+function triggerChamberFire(isLive) {
+    const chambers = $$(".chamber-slot");
+    const currentIdx = chambers.findIndex(c => c.classList.contains("current"));
+    if (currentIdx >= 0) {
+        const c = chambers[currentIdx];
+        c.classList.add(isLive ? "fire-live" : "fire-empty");
+        setTimeout(() => { c.classList.remove("fire-live", "fire-empty"); }, 600);
+    }
+}
+
+function triggerKillFlash() {
+    const old = document.querySelector(".arena-kill-flash");
+    if (old) old.remove();
+    const flash = document.createElement("div");
+    flash.className = "arena-kill-flash";
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 700);
+}
+
+function addButtonRipple(e) {
+    const btn = e.currentTarget;
+    const ripple = document.createElement("span");
+    ripple.className = "ripple-effect";
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    ripple.style.width = ripple.style.height = `${size}px`;
+    ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+    ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+    btn.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 700);
+}
+
+// ===================== 初始化 =====================
+document.addEventListener("DOMContentLoaded", () => {
+    loadPlayers();
+    setupTabs();
+    // 按钮涟漪
+    document.body.addEventListener("click", (e) => {
+        if (e.target.closest(".btn") && !e.target.closest(".btn:disabled")) {
+            addButtonRipple(e);
+        }
+    });
+});
+
+async function loadPlayers() {
+    try {
+        const res = await fetch("/api/players");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        STATE.players = await res.json();
+        populatePlayerSelects();
+    } catch (e) {
+        console.error("加载选手列表失败", e);
+        showToast("加载选手列表失败，请检查服务器连接", "error");
+    }
+}
+
+function populatePlayerSelects() {
+    const selects = ["hva-opponent", "ava-p1", "ava-p2"];
+    selects.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = "";
+        STATE.players.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p.name;
+            opt.textContent = `${p.name} · ${p.character}`;
+            sel.appendChild(opt);
+        });
+    });
+    const avaP2 = document.getElementById("ava-p2");
+    if (avaP2 && STATE.players.length > 1) avaP2.selectedIndex = 1;
+    // 竞技场面板已打开但选手未就绪时，加载完成后补渲染
+    if (STATE.mode === "arena") initArenaGrid();
+}
+
+// ===================== Tab 导航 =====================
+function setupTabs() {
+    $$(".tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+            $$(".tab").forEach(t => t.classList.remove("active"));
+            tab.classList.add("active");
+            $$(".view").forEach(v => v.classList.remove("active"));
+            const el = document.getElementById(tab.dataset.tab);
+            if (el) el.classList.add("active");
+        });
+    });
+}
+
+function switchTab(name) {
+    const tab = $(`[data-tab="${name}"]`);
+    if (tab) tab.click();
+}
+
+function showTab(name) { const t = document.getElementById(`tab-${name}`); if (t) t.style.display = ""; }
+function hideTab(name) { const t = document.getElementById(`tab-${name}`); if (t) t.style.display = "none"; }
+
+// ===================== 模式选择 =====================
+function selectMode(mode) {
+    STATE.mode = mode;
+    $$(".config-panel").forEach(p => p.classList.add("hidden"));
+    $$(".mode-card").forEach(c => c.style.opacity = "0.45");
+    const map = { "human-vs-ai": "human-vs-ai-config", "ai-vs-ai": "ai-vs-ai-config", "tournament": "tournament-config", "arena": "arena-config" };
+    const panel = document.getElementById(map[mode]);
+    if (panel) panel.classList.remove("hidden");
+    if (mode === "arena") initArenaGrid();
+}
+
+function backToModes() {
+    stopAutoPlay();
+    STATE.mode = null;
+    STATE.currentGameId = null;
+    STATE.currentTournamentId = null;
+    STATE.humanName = null;
+    STATE._lastEventCount = 0;
+    STATE._prevScoreKey = "";
+    closeAllWS();
+    $$(".config-panel").forEach(p => p.classList.add("hidden"));
+    $$(".mode-card").forEach(c => c.style.opacity = "1");
+    document.getElementById("game-over-modal").classList.add("hidden");
+    document.getElementById("tournament-over-modal").classList.add("hidden");
+    hideTab("game");
+    hideTab("tournament");
+    switchTab("mode-select");
+    document.getElementById("event-log-content").innerHTML = "";
+    document.getElementById("turn-indicator").textContent = "";
+}
+
+// ===================== WebSocket =====================
+function connectWS(type, id) {
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    // 对局连接声明 viewer 视角：私有情报按视角过滤（信息公平）
+    const suffix = type === "game" && STATE.humanName
+        ? `?viewer=${encodeURIComponent(STATE.humanName)}` : "";
+    const url = `${protocol}//${location.host}/ws/${type}/${id}${suffix}`;
+    const ws = new WebSocket(url);
+
+    ws.onopen = () => { console.log(`WS connected: ${type}/${id}`); };
+    ws.onmessage = (evt) => {
+        try {
+            const data = JSON.parse(evt.data);
+            if (type === "game" && data.type === "game_update") {
+                updateGameView(data.state);
+                if (!data.state.is_over && !data.state.needs_human_input && STATE.isAutoPlaying) {
+                    // 自动播放模式下由定时器驱动，WS 更新仅刷新 UI
+                }
+            } else if (type === "tournament" && data.type === "tournament_update") {
+                updateTournamentView(data.state);
+            }
+        } catch (e) { console.error("WS message parse error", e); }
+    };
+    ws.onclose = (evt) => {
+        console.log(`WS closed: ${type}/${id} code=${evt.code}`);
+        if (type === "game") STATE.wsGame = null;
+        else STATE.wsTournament = null;
+    };
+    ws.onerror = () => { /* 静默处理，onclose 会触发 */ };
+
+    if (type === "game") STATE.wsGame = ws;
+    else STATE.wsTournament = ws;
+}
+
+function closeAllWS() {
+    [STATE.wsGame, STATE.wsTournament].forEach(ws => {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    });
+    STATE.wsGame = null;
+    STATE.wsTournament = null;
+}
+
+// ===================== API 封装 =====================
+async function apiPost(url, body) {
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        let detail = text;
+        try { detail = JSON.parse(text).detail || text; } catch (_) { /* 非 JSON 响应 */ }
+        throw new Error(detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+}
+
+// ===================== 模式切换 =====================
+function onModeChange(prefix) {
+    const mode = document.getElementById(`${prefix}-mode`).value;
+    const panel = document.getElementById(`${prefix}-mode`).closest(".config-panel");
+    // 弹巢/实弹配置同时适用于 classic 与 duel（各持一把时为每把枪的装填）
+    panel.querySelectorAll(".classic-only").forEach(el =>
+        el.classList.toggle("hidden", mode !== "classic" && mode !== "duel"));
+    panel.querySelectorAll(".buckshot-only").forEach(el => el.classList.toggle("hidden", mode !== "buckshot"));
+}
+
+function readModeConfig(prefix) {
+    const mode = document.getElementById(`${prefix}-mode`).value;
+    const cfg = { mode };
+    if (mode === "buckshot") {
+        cfg.max_charges = +document.getElementById(`${prefix}-charges`).value;
+        cfg.item_set = document.getElementById(`${prefix}-items`).value;
+    } else {
+        cfg.total_slots = +document.getElementById(`${prefix}-slots`).value;
+        cfg.live_bullets = +document.getElementById(`${prefix}-bullets`).value;
+    }
+    return cfg;
+}
+
+// ===================== 模型竞技场 =====================
+function initArenaGrid() {
+    if (!STATE.players.length) { showToast("选手列表加载中，请稍候", "info"); return; }
+    ["red", "blue"].forEach(side => {
+        const grid = document.getElementById(`arena-${side}-grid`);
+        if (!grid || grid.childElementCount) return;   // 已渲染
+        grid.innerHTML = "";
+        STATE.players.forEach(p => {
+            const card = document.createElement("div");
+            card.className = "fighter-card";
+            card.dataset.side = side;
+            card.dataset.name = p.name;
+            card.innerHTML = `<span class="fighter-name">${p.name}</span>
+                              <span class="fighter-char">${p.character}</span>`;
+            card.addEventListener("click", () => pickFighter(side, p.name));
+            grid.appendChild(card);
+        });
+    });
+    // 默认随机配对（未选择时）
+    if (!STATE.arenaPick.red || !STATE.arenaPick.blue) arenaRandomPair(true);
+}
+
+function pickFighter(side, name) {
+    const other = side === "red" ? "blue" : "red";
+    if (STATE.arenaPick[other] === name) {
+        // 对方正持有该选手：自动换边，避免重复
+        STATE.arenaPick[other] = STATE.arenaPick[side];
+        showToast("两名选手不能相同，已自动换边", "info");
+    }
+    STATE.arenaPick[side] = name;
+    refreshFighterCards();
+}
+
+function refreshFighterCards() {
+    ["red", "blue"].forEach(side =>
+        $$("#arena-" + side + "-grid .fighter-card").forEach(c =>
+            c.classList.toggle("picked", c.dataset.name === STATE.arenaPick[side])));
+}
+
+function arenaRandomPair(silent) {
+    if (!STATE.players.length) return;
+    const pool = [...STATE.players];
+    const a = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    const b = pool[Math.floor(Math.random() * pool.length)];
+    STATE.arenaPick.red = a.name;
+    STATE.arenaPick.blue = b.name;
+    refreshFighterCards();
+    if (!silent) showToast(`随机配对：${a.name} vs ${b.name}`, "info");
+}
+
+function arenaBetClick() {
+    showToast("🔒 正式投注功能即将开放，当前为预览模式", "info");
+}
+
+async function startArena() {
+    const { red, blue } = STATE.arenaPick;
+    if (!red || !blue) { showToast("请先选择双方选手", "error"); return; }
+    if (red === blue) { showToast("两名选手不能相同", "error"); return; }
+    const cfg = readModeConfig("ar");
+    try {
+        const data = await apiPost("/api/game/create", {
+            player1: red, player2: blue, ...cfg,
+        });
+        STATE.currentGameId = data.game_id;
+        STATE.humanName = null;      // 观战模式：私有信息对观众屏蔽
+        STATE._lastEventCount = 0;
+        showTab("game"); switchTab("game-view");
+        connectWS("game", data.game_id);
+        updateGameView(data.state);
+        autoPlay();                  // 竞技场：自动播放观战
+    } catch (e) {
+        showToast(`创建比赛失败: ${e.message}`, "error");
+    }
+}
+
+// ===================== 创建游戏 =====================
+async function startHumanVsAI() {
+    const opponent = document.getElementById("hva-opponent").value;
+    const cfg = readModeConfig("hva");
+    try {
+        const data = await apiPost("/api/game/create", {
+            player1: "你", player2: opponent, human_player: "你", ...cfg,
+        });
+        STATE.currentGameId = data.game_id;
+        STATE.humanName = "你";
+        STATE._lastEventCount = 0;
+        showTab("game"); switchTab("game-view");
+        connectWS("game", data.game_id);
+        updateGameView(data.state);
+    } catch (e) {
+        showToast(`创建游戏失败: ${e.message}`, "error");
+    }
+}
+
+async function startAIvsAI() {
+    const p1 = document.getElementById("ava-p1").value;
+    const p2 = document.getElementById("ava-p2").value;
+    const cfg = readModeConfig("ava");
+    if (p1 === p2) { showToast("请选择不同的选手", "error"); return; }
+    try {
+        const data = await apiPost("/api/game/create", {
+            player1: p1, player2: p2, ...cfg,
+        });
+        STATE.currentGameId = data.game_id;
+        STATE.humanName = null;      // 观战模式：私有信息对观众屏蔽
+        STATE._lastEventCount = 0;
+        showTab("game"); switchTab("game-view");
+        connectWS("game", data.game_id);
+        updateGameView(data.state);
+    } catch (e) {
+        showToast(`创建游戏失败: ${e.message}`, "error");
+    }
+}
+
+// ===================== 锦标赛 =====================
+async function startTournament() {
+    const playerCount = +document.getElementById("trn-players").value;
+    const cfg = readModeConfig("trn");
+    try {
+        const data = await apiPost("/api/tournament/create", {
+            player_count: playerCount, ...cfg,
+        });
+        STATE.currentTournamentId = data.tournament_id;
+        showTab("tournament"); switchTab("tournament-view");
+        connectWS("tournament", data.tournament_id);
+        updateTournamentView(data.state);
+    } catch (e) {
+        showToast(`创建锦标赛失败: ${e.message}`, "error");
+    }
+}
+
+// ===================== 游戏视图 =====================
+function updateGameView(state) {
+    STATE.currentMode = state.mode || "classic";
+    updatePlayerCard("1", state.p1, state.current_player === state.p1.name);
+    updatePlayerCard("2", state.p2, state.current_player === state.p2.name);
+    // 人类视角：只有自己的私有信息集可见（观战模式不显示任何已知弹）
+    const viewer = STATE.humanName
+        ? (state.p1.name === STATE.humanName ? state.p1 : state.p2)
+        : null;
+    // 决斗轮盘（duel）：双方各持一把，独立展示；其余模式共用一把
+    const hasDuelGuns = !!state.guns;
+    document.getElementById("gun-display").classList.toggle("hidden", hasDuelGuns);
+    document.getElementById("gun-display-duel").classList.toggle("hidden", !hasDuelGuns);
+    if (hasDuelGuns) {
+        updateDuelGunDisplay(state, state.is_over);
+    } else {
+        updateGunDisplay(state.gun, state.is_over, viewer ? viewer.known_shells : null);
+    }
+    document.getElementById("turn-indicator").textContent = state.turn_count > 0 ? `第 ${state.turn_count} 回合` : "";
+    updateEventLog(state.events);
+    updateActionBar(state);
+    if (state.is_over) showGameOver(state);
+}
+
+function updatePlayerCard(side, player, isCurrent) {
+    const card = document.getElementById(`player${side}-card`);
+    document.getElementById(`p${side}-name`).textContent = player.name;
+    document.getElementById(`p${side}-character`).textContent = player.character;
+
+    // 电荷（恶魔轮盘模式）
+    const chargeRow = document.getElementById(`p${side}-charge-row`);
+    const chargeEl = document.getElementById(`p${side}-charges`);
+    if (player.max_charges != null) {
+        chargeRow.classList.remove("hidden");
+        let pips = "";
+        for (let i = 0; i < player.max_charges; i++) {
+            pips += `<span class="pip ${i < player.charges ? "pip-on" : "pip-off"}"></span>`;
+        }
+        chargeEl.innerHTML = pips;
+    } else {
+        chargeRow.classList.add("hidden");
+        chargeEl.innerHTML = "";
+    }
+
+    // 道具栏（恶魔轮盘模式；双方道具数量公开）
+    const itemRow = document.getElementById(`p${side}-item-row`);
+    const itemEl = document.getElementById(`p${side}-items`);
+    if (player.max_charges != null) {
+        itemRow.classList.remove("hidden");
+        itemEl.innerHTML = (player.items || []).length > 0
+            ? player.items.map(id => {
+                const meta = ITEM_META[id] || { name: id, icon: "❔", desc: "" };
+                return `<span class="item-chip" title="${meta.desc}">${meta.icon}</span>`;
+            }).join("")
+            : `<span class="item-empty">—</span>`;
+    } else {
+        itemRow.classList.add("hidden");
+        itemEl.innerHTML = "";
+    }
+
+    // 公开状态徽章：手锯增益 / 手铐束缚
+    const statusRow = document.getElementById(`p${side}-status-row`);
+    const sawedEl = document.getElementById(`p${side}-sawed`);
+    const cuffedEl = document.getElementById(`p${side}-cuffed`);
+    const hasStatus = player.sawed || player.skip_next;
+    statusRow.classList.toggle("hidden", !hasStatus);
+    sawedEl.classList.toggle("hidden", !player.sawed);
+    cuffedEl.classList.toggle("hidden", !player.skip_next);
+
+    const mindset = player.M;
+    const mindsetEl = document.getElementById(`p${side}-mindset`);
+    mindsetEl.textContent = mindset.toFixed(2);
+    mindsetEl.className = mindset > 0.05 ? "mindset-positive" : mindset < -0.05 ? "mindset-negative" : "";
+
+    const streakEl = document.getElementById(`p${side}-streak`);
+    if (player.win_streak > 0) streakEl.textContent = `胜×${player.win_streak}`;
+    else if (player.loss_streak > 0) streakEl.textContent = `败×${player.loss_streak}`;
+    else streakEl.textContent = "--";
+
+    const avatar = card.querySelector(".player-avatar");
+    avatar.textContent = player.is_human ? "🧑‍💻" : "🤖";
+
+    card.classList.remove("active-turn", "dead", "winner-card");
+    document.getElementById(`p${side}-indicator`).classList.add("hidden");
+
+    if (!player.is_alive) card.classList.add("dead");
+    else if (isCurrent) {
+        card.classList.add("active-turn");
+        document.getElementById(`p${side}-indicator`).classList.remove("hidden");
+    }
+}
+
+function renderChamber(container, gun, isGameOver, knownShells) {
+    container.innerHTML = "";
+    for (let i = 0; i < gun.total_slots; i++) {
+        const slot = document.createElement("div");
+        slot.classList.add("chamber-slot");
+        if (i < gun.pointer) slot.classList.add("fired");
+        else if (i === gun.pointer && !isGameOver) slot.classList.add("current");
+        const offset = i - gun.pointer;
+        if (knownShells && offset >= 0 && knownShells[offset] !== undefined) {
+            slot.classList.add(knownShells[offset] ? "known-live" : "known-blank");
+            slot.title = knownShells[offset] ? "已知：实弹 🔴" : "已知：空弹 🔵";
+        }
+        container.appendChild(slot);
+    }
+}
+
+function updateDuelGunDisplay(state, isGameOver) {
+    [state.p1, state.p2].forEach((p, i) => {
+        const n = i + 1;
+        const gun = state.guns[p.name];
+        document.getElementById(`duel-gun-${n}-name`).textContent = p.name;
+        document.getElementById(`duel-gun-${n}-remaining`).textContent =
+            `${gun.remaining_slots}/${gun.total_slots} 剩余`;
+        const liveEl = document.getElementById(`duel-gun-${n}-live`);
+        liveEl.innerHTML = isGameOver
+            ? `<span class="live-count">实弹: ${gun.live_bullets}</span>`
+            : (gun.remaining_live > 0
+                ? `<span class="live-count">实弹: ${gun.remaining_live}</span>`
+                : "实弹: 0");
+        renderChamber(document.getElementById(`duel-gun-${n}-visual`), gun, isGameOver, null);
+        const card = document.getElementById(`duel-gun-${n}`);
+        card.classList.toggle("active-gun", state.current_player === p.name && !isGameOver);
+        card.classList.toggle("dead-gun", !p.is_alive);
+    });
+}
+
+function updateGunDisplay(gun, isGameOver, knownShells) {
+    const remainingEl = document.getElementById("gun-remaining");
+    const liveEl = document.getElementById("gun-live");
+    const blankEl = document.getElementById("gun-blank");
+    remainingEl.textContent = `${gun.remaining_slots}/${gun.total_slots} 剩余`;
+
+    if (isGameOver) {
+        liveEl.innerHTML = `<span class="live-count">实弹: ${gun.live_bullets}</span>`;
+    } else {
+        liveEl.innerHTML = gun.remaining_live > 0
+            ? `<span class="live-count">实弹: ${gun.remaining_live}</span>`
+            : `实弹: 0`;
+    }
+
+    // 恶魔轮盘：空弹数为公开信息
+    if (gun.remaining_blank != null && !isGameOver) {
+        blankEl.classList.remove("hidden");
+        blankEl.textContent = `空弹: ${gun.remaining_blank}`;
+    } else {
+        blankEl.classList.add("hidden");
+    }
+
+    // 弹巢可视化：人类玩家用放大镜得知的弹型打上标记（offset 相对 pointer）
+    renderChamber(document.getElementById("chamber-visual"), gun, isGameOver, knownShells);
+}
+
+function updateEventLog(events) {
+    const container = document.getElementById("event-log-content");
+    const prevCount = STATE._lastEventCount;
+    STATE._lastEventCount = events.length;
+
+    container.innerHTML = "";
+
+    events.forEach((e, idx) => {
+        const div = document.createElement("div");
+        div.classList.add("event-entry", e.type);
+
+        // 实弹开火特效
+        if (e.type === "fire" && e.is_live) {
+            div.classList.add("live-fire");
+        }
+
+        // 私有情报：服务端按 viewer 过滤（masked 标志），前端只做样式分层
+        let msg = e.message || "";
+        if (e.type === "peek") {
+            if (e.masked) {
+                div.classList.add("private-masked");
+            } else {
+                div.classList.add("private-own");
+            }
+        } else if (e.type === "item_use") {
+            div.classList.add("item-event");
+        }
+
+        // 消息文本
+        const msgSpan = document.createElement("span");
+        msgSpan.textContent = msg;
+        div.appendChild(msgSpan);
+
+        // 决策详情 - breakdown
+        if (e.type === "decision" && e.breakdown && e.breakdown.reanalyzed) {
+            const bd = e.breakdown;
+            const toggle = document.createElement("span");
+            toggle.className = "breakdown-toggle";
+            toggle.textContent = "📊 详情";
+            toggle.addEventListener("click", () => {
+                const existing = div.querySelector(".breakdown-detail");
+                if (existing) { existing.remove(); toggle.textContent = "📊 详情"; return; }
+                toggle.textContent = "📊 收起";
+
+                const detail = document.createElement("div");
+                detail.className = "breakdown-detail";
+                if (bd.kernel === "utility") {
+                    // 恶魔轮盘：效用评估明细
+                    const fmt = v => (v >= 0 ? "+" : "") + v;
+                    detail.innerHTML = `
+                        <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
+                        <span class="bd-label">实弹概率 p</span><span class="bd-value">${bd.p_live}</span>
+                        <span class="bd-label">蝉联价值 T</span><span class="bd-value">${bd.t_value}</span>
+                        <span class="bd-label">人格偏置</span><span class="bd-value">${fmt(bd.tie_bias)}</span>
+                        <span class="bd-label">对手威胁</span><span class="bd-value">${bd.opp_threat != null ? bd.opp_threat : "—"}</span>
+                        <span class="bd-label">威胁偏置</span><span class="bd-value">${bd.threat_bias != null ? fmt(bd.threat_bias) : "—"}</span>
+                        <span class="bd-label">λ 击敌/自伤/交权</span><span class="bd-value">${bd.lam_kill} / ${bd.lam_own} / ${bd.lam_give}</span>
+                        <span class="bd-label">EU 自击</span><span class="bd-value">${bd.eu_self}</span>
+                        <span class="bd-label">EU 击敌</span><span class="bd-value">${bd.eu_enemy}</span>
+                        <span class="bd-label">心态修正</span><span class="bd-value">${fmt(bd.mindset_delta)}</span>
+                        <span class="bd-label">冷静系数</span><span class="bd-value">${bd.calm_factor}</span>
+                        <span class="bd-label">随机扰动</span><span class="bd-value">${fmt(bd.noise_delta)}</span>
+                        <span class="bd-label" style="color:var(--accent)">最终效用差</span><span class="bd-value bd-highlight">${fmt(bd.final_diff)} → ${bd.choice === "opponent" ? "击敌" : "自击"}</span>
+                    `;
+                } else {
+                    // 经典模式：攻击倾向明细
+                    detail.innerHTML = `
+                        <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
+                        <span class="bd-label">实际 P0</span><span class="bd-value">${bd.pr}</span>
+                        <span class="bd-label">基础攻击欲</span><span class="bd-value">${bd.base_attack}</span>
+                        <span class="bd-label">蝉联期权</span><span class="bd-value">${bd.option_value != null ? "-" + bd.option_value : "—"}</span>
+                        <span class="bd-label">心态修正</span><span class="bd-value">${bd.mindset_delta >= 0 ? "+" : ""}${bd.mindset_delta}</span>
+                        <span class="bd-label">修正后</span><span class="bd-value">${bd.attack_after_mindset}</span>
+                        <span class="bd-label">冷静压制</span><span class="bd-value">${bd.calm_delta >= 0 ? "+" : ""}${bd.calm_delta}</span>
+                        <span class="bd-label">压制后</span><span class="bd-value">${bd.attack_after_calm}</span>
+                        <span class="bd-label">随机扰动</span><span class="bd-value">${bd.random_delta >= 0 ? "+" : ""}${bd.random_delta}</span>
+                        <span class="bd-label" style="color:var(--accent)">最终攻击欲</span><span class="bd-value bd-highlight">${bd.final_attack}</span>
+                    `;
+                }
+                div.appendChild(detail);
+            });
+            div.appendChild(toggle);
+        }
+
+        container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+
+    // 新 fire 事件触发动画
+    if (events.length > prevCount) {
+        for (let i = prevCount; i < events.length; i++) {
+            const evt = events[i];
+            if (evt.type === "fire") {
+                triggerGunRecoil();
+                triggerChamberFire(evt.is_live);
+                if (evt.is_live) triggerKillFlash();
+            }
+        }
+    }
+}
+
+function updateActionBar(state) {
+    const humanActions = document.getElementById("human-actions");
+    const aiActions = document.getElementById("ai-actions");
+    if (state.is_over) {
+        humanActions.classList.add("hidden");
+        aiActions.classList.add("hidden");
+        return;
+    }
+    if (state.needs_human_input) {
+        humanActions.classList.remove("hidden");
+        aiActions.classList.add("hidden");
+        renderHumanItemButtons(state);
+        document.querySelectorAll("#human-actions .shoot-action-row .btn").forEach(b => b.disabled = false);
+    } else {
+        humanActions.classList.add("hidden");
+        aiActions.classList.remove("hidden");
+        document.getElementById("btn-step").disabled = STATE.isAutoPlaying;
+        document.getElementById("btn-auto").disabled = STATE.isAutoPlaying;
+    }
+}
+
+// 人类道具按钮：道具不消耗回合，使用后仍需射击
+function renderHumanItemButtons(state) {
+    const row = document.getElementById("human-item-actions");
+    const me = [state.p1, state.p2].find(p => p.name === STATE.humanName);
+    if (!me || state.item_set === "none" || !me.items || me.items.length === 0) {
+        row.classList.add("hidden");
+        row.innerHTML = "";
+        return;
+    }
+    // 同类道具合并计数
+    const counts = {};
+    me.items.forEach(id => { counts[id] = (counts[id] || 0) + 1; });
+    row.innerHTML = "";
+    Object.keys(counts).forEach(id => {
+        const meta = ITEM_META[id] || { name: id, icon: "❔", desc: "" };
+        const btn = document.createElement("button");
+        btn.className = "btn btn-item";
+        btn.title = meta.desc;
+        btn.textContent = `${meta.icon} ${meta.name}${counts[id] > 1 ? ` ×${counts[id]}` : ""}`;
+        btn.addEventListener("click", () => humanUseItem(id));
+        row.appendChild(btn);
+    });
+    row.classList.remove("hidden");
+}
+
+function showGameOver(state) {
+    const modal = document.getElementById("game-over-modal");
+    modal.classList.remove("hidden");
+    document.getElementById("game-over-message").textContent = `🏆 ${state.winner} 获胜！`;
+    if (state.p1.name === state.winner) {
+        document.getElementById("player1-card").classList.add("winner-card");
+        document.getElementById("player2-card").classList.add("dead");
+    } else {
+        document.getElementById("player2-card").classList.add("winner-card");
+        document.getElementById("player1-card").classList.add("dead");
+    }
+}
+
+// ===================== 游戏操作 =====================
+async function humanAction(choice) {
+    const btns = document.querySelectorAll("#human-actions .btn");
+    btns.forEach(b => { b.disabled = true; b.classList.add("btn-loading"); });
+    try {
+        const data = await apiPost(`/api/game/${STATE.currentGameId}/action`, { choice });
+        updateGameView(data);
+    } catch (e) {
+        showToast(`操作失败: ${e.message}`, "error");
+    }
+    btns.forEach(b => { b.disabled = false; b.classList.remove("btn-loading"); });
+}
+
+// 使用道具（不消耗回合；服务端校验失败返回 400 + 中文原因）
+async function humanUseItem(itemId) {
+    const btns = document.querySelectorAll("#human-actions .btn");
+    btns.forEach(b => { b.disabled = true; b.classList.add("btn-loading"); });
+    try {
+        const data = await apiPost(`/api/game/${STATE.currentGameId}/action`, { item_id: itemId });
+        updateGameView(data);
+    } catch (e) {
+        showToast(`${e.message}`, "error");
+    }
+    btns.forEach(b => { b.disabled = false; b.classList.remove("btn-loading"); });
+}
+
+async function autoStep() {
+    const btn = document.getElementById("btn-step");
+    btn.disabled = true;
+    btn.classList.add("btn-loading");
+    try {
+        const data = await apiPost(`/api/game/${STATE.currentGameId}/auto-step`);
+        updateGameView(data);
+    } catch (e) {
+        showToast(`步进失败: ${e.message}`, "error");
+    }
+    btn.disabled = false;
+    btn.classList.remove("btn-loading");
+}
+
+function autoPlay() {
+    if (STATE.isAutoPlaying) {
+        stopAutoPlay();
+        return;
+    }
+    STATE.isAutoPlaying = true;
+    const btnAuto = document.getElementById("btn-auto");
+    const btnStep = document.getElementById("btn-step");
+    btnAuto.textContent = "⏹ 停止";
+    btnAuto.classList.add("btn-accent");
+    btnAuto.classList.remove("btn-primary");
+    btnStep.disabled = true;
+    autoPlayStep();
+}
+
+function stopAutoPlay() {
+    STATE.isAutoPlaying = false;
+    if (STATE.autoPlayTimer) { clearTimeout(STATE.autoPlayTimer); STATE.autoPlayTimer = null; }
+    const btnAuto = document.getElementById("btn-auto");
+    const btnStep = document.getElementById("btn-step");
+    btnAuto.textContent = "⏩ 自动播放";
+    btnAuto.classList.remove("btn-accent");
+    btnAuto.classList.add("btn-primary");
+    btnAuto.disabled = false;
+    btnStep.disabled = false;
+}
+
+async function autoPlayStep() {
+    if (!STATE.isAutoPlaying) return;
+    try {
+        const data = await apiPost(`/api/game/${STATE.currentGameId}/auto-step`);
+        updateGameView(data);
+        if (data.is_over) {
+            stopAutoPlay();
+            return;
+        }
+        if (data.needs_human_input) {
+            stopAutoPlay();
+            return;
+        }
+        STATE.autoPlayTimer = setTimeout(autoPlayStep, 800);
+    } catch (e) {
+        showToast(`自动播放出错: ${e.message}`, "error");
+        stopAutoPlay();
+    }
+}
+
+// ===================== 锦标赛视图 =====================
+function updateTournamentView(state) {
+    updateSchedule(state);
+    updateScoreboard(state);
+    updateTournamentCurrent(state);
+    const btnStep = document.getElementById("btn-trn-step");
+    const btnAll = document.getElementById("btn-trn-all");
+    if (state.is_over) {
+        showTournamentOver(state);
+        btnStep.disabled = true;
+        btnAll.disabled = true;
+    } else {
+        btnStep.disabled = false;
+        btnAll.disabled = false;
+    }
+}
+
+function updateSchedule(state) {
+    const list = document.getElementById("schedule-list");
+    list.innerHTML = "";
+    state.schedule.forEach((m, i) => {
+        const div = document.createElement("div");
+        div.classList.add("schedule-item");
+        if (i < state.match_index) {
+            div.classList.add("played");
+            const result = state.match_results[i];
+            const winner = result ? result.winner : "?";
+            div.innerHTML = `#${i + 1} ${m.p1} vs ${m.p2}<br><span class="winner-tag">🏆 ${winner}</span>`;
+        } else if (i === state.match_index) {
+            div.classList.add("current");
+            div.innerHTML = `#${i + 1} <span style="color:var(--accent)">⚡</span> ${m.p1} vs ${m.p2}`;
+        } else {
+            div.classList.add("pending");
+            div.textContent = `#${i + 1} ${m.p1} vs ${m.p2}`;
+        }
+        list.appendChild(div);
+    });
+    list.scrollTop = list.scrollHeight;
+}
+
+function updateScoreboard(state) {
+    const board = document.getElementById("scoreboard");
+    const players = state.players.map((p, i) => ({
+        ...p, wins: state.wins[i], losses: state.losses[i], kills: state.kills[i]
+    }));
+    players.sort((a, b) => b.wins - a.wins || b.kills - a.kills || a.losses - b.losses);
+
+    const scoreKey = players.map(p => `${p.name}:${p.wins}-${p.losses}-${p.kills}`).join("|");
+    const hasChanged = scoreKey !== STATE._prevScoreKey;
+    STATE._prevScoreKey = scoreKey;
+
+    let html = `<table class="scoreboard-table"><thead><tr>
+        <th>#</th><th>选手</th><th>人格</th><th>胜</th><th>负</th><th>击杀</th>
+    </tr></thead><tbody>`;
+
+    players.forEach((p, rank) => {
+        const rc = rank === 0 ? "rank-1" : rank === 1 ? "rank-2" : rank === 2 ? "rank-3" : "";
+        const medal = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : "";
+        const highlight = hasChanged ? " score-updated" : "";
+        html += `<tr class="${highlight}">
+            <td class="${rc}">${medal} ${rank + 1}</td>
+            <td><strong>${p.name}</strong></td>
+            <td>${p.character}</td>
+            <td>${p.wins}</td>
+            <td>${p.losses}</td>
+            <td>${p.kills}</td>
+        </tr>`;
+    });
+    html += "</tbody></table>";
+    board.innerHTML = html;
+}
+
+function updateTournamentCurrent(state) {
+    const el = document.getElementById("tournament-current");
+    if (state.is_over) {
+        el.innerHTML = "✅ 全部比赛已完成！";
+    } else if (state.current_game) {
+        const cg = state.current_game;
+        const winner = cg.winner || "?";
+        el.innerHTML = `⚡ 上一场：<strong>${cg.p1.name}</strong> vs <strong>${cg.p2.name}</strong> → 🏆 ${winner}`;
+    } else {
+        el.innerHTML = `准备开始第 <strong>${state.match_index + 1}/${state.total_matches}</strong> 场比赛…`;
+    }
+}
+
+function showTournamentOver(state) {
+    const modal = document.getElementById("tournament-over-modal");
+    modal.classList.remove("hidden");
+    const rankingDiv = document.getElementById("tournament-final-ranking");
+    rankingDiv.className = "ranking-list";
+    if (state.ranking && state.ranking.length > 0) {
+        rankingDiv.innerHTML = state.ranking.map(r => {
+            const medal = r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : "";
+            return `<p>${medal} <strong>${r.name}</strong> (${r.character}) — ${r.wins}胜${r.losses}负 ${r.kills}击杀</p>`;
+        }).join("");
+    }
+}
+
+// ===================== 锦标赛操作 =====================
+async function tournamentStep() {
+    const btn = document.getElementById("btn-trn-step");
+    btn.disabled = true;
+    btn.classList.add("btn-loading");
+    try {
+        const data = await apiPost(`/api/tournament/${STATE.currentTournamentId}/step`);
+        updateTournamentView(data);
+    } catch (e) {
+        showToast(`步进失败: ${e.message}`, "error");
+    }
+    btn.disabled = false;
+    btn.classList.remove("btn-loading");
+}
+
+async function tournamentRunAll() {
+    const btnStep = document.getElementById("btn-trn-step");
+    const btnAll = document.getElementById("btn-trn-all");
+    btnStep.disabled = true;
+    btnAll.disabled = true;
+    btnAll.classList.add("btn-loading");
+    try {
+        const data = await apiPost(`/api/tournament/${STATE.currentTournamentId}/run-all`);
+        updateTournamentView(data);
+    } catch (e) {
+        showToast(`运行失败: ${e.message}`, "error");
+    }
+    btnStep.disabled = false;
+    btnAll.disabled = false;
+    btnAll.classList.remove("btn-loading");
+}

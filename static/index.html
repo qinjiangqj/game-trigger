@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 俄罗斯轮盘大逃杀</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <h1>🔫 AI 俄罗斯轮盘大逃杀</h1>
+            <nav class="tabs">
+                <button class="tab active" data-tab="mode-select">🎮 选择模式</button>
+                <button class="tab" data-tab="game-view" style="display:none" id="tab-game">⚔️ 对战</button>
+                <button class="tab" data-tab="tournament-view" style="display:none" id="tab-tournament">🏆 锦标赛</button>
+            </nav>
+        </header>
+
+        <!-- 模式选择 -->
+        <div id="mode-select" class="view active">
+            <div class="mode-cards">
+                <div class="mode-card" onclick="selectMode('human-vs-ai')">
+                    <div class="mode-icon">🧑‍💻</div>
+                    <h3>人类 vs AI</h3>
+                    <p>你亲自上场，和AI一决高下</p>
+                </div>
+                <div class="mode-card" onclick="selectMode('ai-vs-ai')">
+                    <div class="mode-icon">🤖</div>
+                    <h3>AI vs AI 观战</h3>
+                    <p>观看AI之间的智力对决</p>
+                </div>
+                <div class="mode-card" onclick="selectMode('tournament')">
+                    <div class="mode-icon">🏆</div>
+                    <h3>AI 锦标赛</h3>
+                    <p>6个AI大混战，循环赛制</p>
+                </div>
+                <div class="mode-card" onclick="selectMode('arena')">
+                    <div class="mode-icon">🏟️</div>
+                    <h3>模型竞技场</h3>
+                    <p>各持一把 1v1 决斗，下注观战赢积分</p>
+                </div>
+            </div>
+
+            <!-- 人类 vs AI 配置 -->
+            <div id="human-vs-ai-config" class="config-panel hidden">
+                <h2>🧑‍💻 人类 vs AI</h2>
+                <div class="config-row">
+                    <div class="config-col">
+                        <label>你的对手</label>
+                        <select id="hva-opponent"></select>
+                    </div>
+                    <div class="config-col">
+                        <label>游戏模式</label>
+                        <select id="hva-mode" onchange="onModeChange('hva')">
+                            <option value="classic" selected>经典轮盘</option>
+                            <option value="buckshot">恶魔轮盘</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>弹巢数</label>
+                        <select id="hva-slots">
+                            <option value="6" selected>6</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>实弹数</label>
+                        <select id="hva-bullets">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>生命电荷</label>
+                        <select id="hva-charges">
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>道具</label>
+                        <select id="hva-items">
+                            <option value="standard" selected>标准 5 件</option>
+                            <option value="full">全量 9 件（DoN）</option>
+                            <option value="none">关闭</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="startHumanVsAI()">⚔️ 开始对战</button>
+                <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
+            </div>
+
+            <!-- AI vs AI 配置 -->
+            <div id="ai-vs-ai-config" class="config-panel hidden">
+                <h2>🤖 AI vs AI 观战</h2>
+                <div class="config-row">
+                    <div class="config-col">
+                        <label>选手A</label>
+                        <select id="ava-p1"></select>
+                    </div>
+                    <div class="config-col">
+                        <label>选手B</label>
+                        <select id="ava-p2"></select>
+                    </div>
+                    <div class="config-col">
+                        <label>游戏模式</label>
+                        <select id="ava-mode" onchange="onModeChange('ava')">
+                            <option value="classic" selected>经典轮盘</option>
+                            <option value="buckshot">恶魔轮盘</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>弹巢数</label>
+                        <select id="ava-slots">
+                            <option value="6" selected>6</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>实弹数</label>
+                        <select id="ava-bullets">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>生命电荷</label>
+                        <select id="ava-charges">
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>道具</label>
+                        <select id="ava-items">
+                            <option value="standard" selected>标准 5 件</option>
+                            <option value="full">全量 9 件（DoN）</option>
+                            <option value="none">关闭</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="startAIvsAI()">👀 开始观战</button>
+                <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
+            </div>
+
+            <!-- 模型竞技场配置 -->
+            <div id="arena-config" class="config-panel hidden">
+                <h2>🏟️ 模型竞技场 <span class="badge badge-preview">预览模式</span></h2>
+                <p class="arena-intro">
+                    两名 AI 模型各持一把随机装填的轮盘，依次开枪决出胜负。
+                    比赛开始前可对任意一方下注观战，实时预测胜负赢取积分。
+                </p>
+
+                <!-- 选边 -->
+                <div class="arena-pick">
+                    <div class="arena-side">
+                        <div class="arena-side-title red">🔴 红方</div>
+                        <div class="fighter-grid" id="arena-red-grid"></div>
+                    </div>
+                    <div class="arena-vs">VS</div>
+                    <div class="arena-side">
+                        <div class="arena-side-title blue">🔵 蓝方</div>
+                        <div class="fighter-grid" id="arena-blue-grid"></div>
+                    </div>
+                </div>
+                <div class="arena-pick-actions">
+                    <button class="btn btn-secondary" onclick="arenaRandomPair()">🎲 随机配对</button>
+                </div>
+
+                <!-- 积分与下注（预览占位） -->
+                <div class="arena-bet-panel">
+                    <div class="arena-points">💰 我的积分：<b>1,000</b><span class="points-hint">（预览模式 · 暂不计入）</span></div>
+                    <div class="arena-bet-form disabled" onclick="arenaBetClick()">
+                        <span class="bet-side"><input type="radio" disabled>🔴 红方</span>
+                        <span class="bet-side"><input type="radio" disabled>🔵 蓝方</span>
+                        <input type="number" class="bet-amount" value="100" min="10" step="10" disabled>
+                        <button class="btn btn-gold" disabled>🔒 下注</button>
+                    </div>
+                    <div class="arena-bet-note">正式投注功能即将开放，当前仅展示对战过程</div>
+                </div>
+
+                <div class="config-row">
+                    <div class="config-col">
+                        <label>游戏模式</label>
+                        <select id="ar-mode" onchange="onModeChange('ar')">
+                            <option value="duel" selected>决斗轮盘（各持一把）</option>
+                            <option value="classic">经典轮盘（共用一把）</option>
+                            <option value="buckshot">恶魔轮盘</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>弹巢数</label>
+                        <select id="ar-slots">
+                            <option value="6" selected>6</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>实弹数</label>
+                        <select id="ar-bullets">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>生命电荷</label>
+                        <select id="ar-charges">
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>道具</label>
+                        <select id="ar-items">
+                            <option value="standard" selected>标准 5 件</option>
+                            <option value="full">全量 9 件（DoN）</option>
+                            <option value="none">关闭</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="startArena()">🚀 开战观战</button>
+                <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
+            </div>
+
+            <!-- 锦标赛配置 -->
+            <div id="tournament-config" class="config-panel hidden">
+                <h2>🏆 AI 锦标赛</h2>
+                <div class="config-row">
+                    <div class="config-col">
+                        <label>选手数量</label>
+                        <select id="trn-players">
+                            <option value="6" selected>6 人</option>
+                        </select>
+                    </div>
+                    <div class="config-col">
+                        <label>游戏模式</label>
+                        <select id="trn-mode" onchange="onModeChange('trn')">
+                            <option value="classic" selected>经典轮盘</option>
+                            <option value="buckshot">恶魔轮盘</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>弹巢数</label>
+                        <select id="trn-slots">
+                            <option value="6" selected>6</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                    <div class="config-col classic-only">
+                        <label>实弹数</label>
+                        <select id="trn-bullets">
+                            <option value="1" selected>1</option>
+                            <option value="2">2</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>生命电荷</label>
+                        <select id="trn-charges">
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="config-col buckshot-only hidden">
+                        <label>道具</label>
+                        <select id="trn-items">
+                            <option value="standard" selected>标准 5 件</option>
+                            <option value="full">全量 9 件（DoN）</option>
+                            <option value="none">关闭</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="startTournament()">🏆 开始锦标赛</button>
+                <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
+            </div>
+        </div>
+
+        <!-- 对战视图 -->
+        <div id="game-view" class="view">
+            <div class="game-arena">
+                <div class="player-card" id="player1-card">
+                    <div class="player-avatar">🤖</div>
+                    <div class="player-info">
+                        <h2 id="p1-name">--</h2>
+                        <span class="badge" id="p1-character">--</span>
+                        <div class="stat-row charge-row hidden" id="p1-charge-row">
+                            <span>电荷</span>
+                            <span class="charge-pips" id="p1-charges"></span>
+                        </div>
+                        <div class="stat-row item-row hidden" id="p1-item-row">
+                            <span>道具</span>
+                            <span class="item-slots" id="p1-items"></span>
+                        </div>
+                        <div class="status-row hidden" id="p1-status-row">
+                            <span class="status-badge badge-sawed hidden" id="p1-sawed">🪚 下次实弹×2</span>
+                            <span class="status-badge badge-cuffed hidden" id="p1-cuffed">🔗 下回合被铐</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>心态</span>
+                            <span class="stat-value" id="p1-mindset">0.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>连</span><span id="p1-streak">--</span>
+                        </div>
+                    </div>
+                    <div class="player-indicator hidden" id="p1-indicator">⚡ 当前回合</div>
+                </div>
+
+                <div class="vs-divider">
+                    <div class="gun-display" id="gun-display">
+                        <div class="gun-icon">🔫</div>
+                        <div class="gun-info">
+                            <span id="gun-remaining">6/6 剩余</span>
+                            <span id="gun-live">实弹: 1</span>
+                            <span id="gun-blank" class="hidden">空弹: 0</span>
+                        </div>
+                        <div class="chamber-visual" id="chamber-visual"></div>
+                    </div>
+                    <div class="gun-display-duel hidden" id="gun-display-duel">
+                        <div class="duel-gun" id="duel-gun-1">
+                            <div class="duel-gun-header"><span>🔫</span><span class="duel-gun-name" id="duel-gun-1-name">--</span></div>
+                            <div class="gun-info">
+                                <span id="duel-gun-1-remaining">6/6 剩余</span>
+                                <span id="duel-gun-1-live">实弹: 1</span>
+                            </div>
+                            <div class="chamber-visual" id="duel-gun-1-visual"></div>
+                        </div>
+                        <div class="duel-gun" id="duel-gun-2">
+                            <div class="duel-gun-header"><span>🔫</span><span class="duel-gun-name" id="duel-gun-2-name">--</span></div>
+                            <div class="gun-info">
+                                <span id="duel-gun-2-remaining">6/6 剩余</span>
+                                <span id="duel-gun-2-live">实弹: 1</span>
+                            </div>
+                            <div class="chamber-visual" id="duel-gun-2-visual"></div>
+                        </div>
+                    </div>
+                    <span class="vs-text">VS</span>
+                    <div class="turn-indicator" id="turn-indicator"></div>
+                </div>
+
+                <div class="player-card" id="player2-card">
+                    <div class="player-avatar">🤖</div>
+                    <div class="player-info">
+                        <h2 id="p2-name">--</h2>
+                        <span class="badge" id="p2-character">--</span>
+                        <div class="stat-row charge-row hidden" id="p2-charge-row">
+                            <span>电荷</span>
+                            <span class="charge-pips" id="p2-charges"></span>
+                        </div>
+                        <div class="stat-row item-row hidden" id="p2-item-row">
+                            <span>道具</span>
+                            <span class="item-slots" id="p2-items"></span>
+                        </div>
+                        <div class="status-row hidden" id="p2-status-row">
+                            <span class="status-badge badge-sawed hidden" id="p2-sawed">🪚 下次实弹×2</span>
+                            <span class="status-badge badge-cuffed hidden" id="p2-cuffed">🔗 下回合被铐</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>心态</span>
+                            <span class="stat-value" id="p2-mindset">0.00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>连</span><span id="p2-streak">--</span>
+                        </div>
+                    </div>
+                    <div class="player-indicator hidden" id="p2-indicator">⚡ 当前回合</div>
+                </div>
+            </div>
+
+            <!-- 事件日志 -->
+            <div class="event-log" id="event-log">
+                <div class="event-log-header">📜 对战日志</div>
+                <div class="event-log-content" id="event-log-content"></div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="action-bar" id="action-bar">
+                <div id="human-actions" class="hidden">
+                    <div class="item-action-row hidden" id="human-item-actions"></div>
+                    <div class="shoot-action-row">
+                        <button class="btn btn-danger" onclick="humanAction('self')">💥 射击自己</button>
+                        <button class="btn btn-attack" onclick="humanAction('opponent')">🎯 射击对方</button>
+                    </div>
+                </div>
+                <div id="ai-actions">
+                    <button class="btn btn-primary" onclick="autoStep()" id="btn-step">▶ 下一步</button>
+                    <button class="btn btn-accent" onclick="autoPlay()" id="btn-auto">⏩ 自动播放</button>
+                </div>
+            </div>
+
+            <!-- 游戏结束弹窗 -->
+            <div id="game-over-modal" class="modal hidden">
+                <div class="modal-content">
+                    <h2 id="game-over-title">🏆 游戏结束</h2>
+                    <p id="game-over-message"></p>
+                    <button class="btn btn-primary" onclick="backToModes()">🔄 再来一局</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 锦标赛视图 -->
+        <div id="tournament-view" class="view">
+            <div class="tournament-layout">
+                <!-- 赛程表 -->
+                <div class="tournament-schedule" id="tournament-schedule">
+                    <h2>📋 赛程</h2>
+                    <div id="schedule-list"></div>
+                </div>
+                <!-- 积分榜 -->
+                <div class="tournament-main">
+                    <h2>📊 积分榜</h2>
+                    <div id="scoreboard"></div>
+                    <div class="tournament-current" id="tournament-current"></div>
+                    <div class="action-bar">
+                        <button class="btn btn-primary" onclick="tournamentStep()" id="btn-trn-step">▶ 下一场</button>
+                        <button class="btn btn-accent" onclick="tournamentRunAll()" id="btn-trn-all">⏩ 全部运行</button>
+                    </div>
+                </div>
+            </div>
+            <div id="tournament-over-modal" class="modal hidden">
+                <div class="modal-content">
+                    <h2>🏆 锦标赛结束</h2>
+                    <div id="tournament-final-ranking"></div>
+                    <button class="btn btn-primary" onclick="backToModes()">🔄 新锦标赛</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
