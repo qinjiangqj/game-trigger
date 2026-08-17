@@ -388,13 +388,19 @@
                 <div id="human-actions" class="hidden">
                     <div class="item-action-row hidden" id="human-item-actions"></div>
                     <div class="shoot-action-row">
-                        <button class="btn btn-danger" onclick="humanAction('self')">💥 射击自己</button>
-                        <button class="btn btn-attack" onclick="humanAction('opponent')">🎯 射击对方</button>
+                        <button class="btn btn-danger" onclick="humanAction('self')" title="快捷键: 1">💥 射击自己</button>
+                        <button class="btn btn-attack" onclick="humanAction('opponent')" title="快捷键: 2">🎯 射击对方</button>
                     </div>
                 </div>
                 <div id="ai-actions">
-                    <button class="btn btn-primary" onclick="autoStep()" id="btn-step">▶ 下一步</button>
-                    <button class="btn btn-accent" onclick="autoPlay()" id="btn-auto">⏩ 自动播放</button>
+                    <button class="btn btn-primary" onclick="autoStep()" id="btn-step" title="快捷键: 空格 / →">▶ 下一步</button>
+                    <button class="btn btn-accent" onclick="autoPlay()" id="btn-auto" title="快捷键: A">⏩ 自动播放</button>
+                    <div class="speed-control" id="speed-control" title="自动播放速度">
+                        <span class="speed-label">速度</span>
+                        <button class="speed-btn" data-delay="1400" onclick="setAutoSpeed(this)">🐢</button>
+                        <button class="speed-btn active" data-delay="800" onclick="setAutoSpeed(this)">▶</button>
+                        <button class="speed-btn" data-delay="350" onclick="setAutoSpeed(this)">⚡</button>
+                    </div>
                 </div>
             </div>
 
@@ -404,6 +410,7 @@
                     <h2 id="game-over-title">🏆 游戏结束</h2>
                     <p id="game-over-message"></p>
                     <p id="game-over-bet" class="bet-result hidden"></p>
+                    <button class="btn btn-gold hidden" id="btn-rematch-arena" onclick="rematchArena()">🏟️ 再战一场</button>
                     <button class="btn btn-primary" onclick="backToModes()">🔄 再来一局</button>
                 </div>
             </div>

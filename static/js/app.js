@@ -15,6 +15,7 @@ const STATE = {
     arenaPick: { red: null, blue: null },   // 竞技场选边
     points: null,          // 竞技场积分（localStorage 持久化）
     arenaBet: null,        // 进行中的下注 {side, amount, odds, playerName}
+    autoSpeedDelay: 800,   // 自动播放步进间隔（ms）
 };
 
 // 基准胜率（%）：10 万届循环赛，benchmarks/benchmark-20260817.md + 决斗轮盘 20260818
@@ -120,7 +121,32 @@ document.addEventListener("DOMContentLoaded", () => {
             addButtonRipple(e);
         }
     });
+    // 键盘快捷键（仅对战视图；输入控件聚焦时忽略）
+    document.addEventListener("keydown", onHotkey);
 });
+
+// 快捷键：人类模式 1=射自己 2=射对方；观战模式 Space/→=下一步 A=自动播放
+function onHotkey(e) {
+    if (e.target.matches("input, select, textarea, button")) return;
+    if (!document.getElementById("game-view").classList.contains("active")) return;
+    if (!STATE.currentGameId) return;
+    if (!document.getElementById("game-over-modal").classList.contains("hidden")) return;
+
+    const humanVisible = !document.getElementById("human-actions").classList.contains("hidden");
+    if (humanVisible && !STATE.isAutoPlaying) {
+        const shootBtns = document.querySelectorAll("#human-actions .shoot-action-row .btn");
+        if ([...shootBtns].some(b => b.disabled)) return;   // 请求进行中
+        if (e.key === "1") humanAction("self");
+        else if (e.key === "2") humanAction("opponent");
+    } else if (!humanVisible) {
+        if (e.key === " " || e.key === "ArrowRight") {
+            e.preventDefault();
+            if (!STATE.isAutoPlaying) autoStep();
+        } else if (e.key.toLowerCase() === "a") {
+            autoPlay();
+        }
+    }
+}
 
 async function loadPlayers() {
     try {
@@ -185,7 +211,7 @@ function selectMode(mode) {
     if (mode === "arena") initArenaGrid();
 }
 
-function backToModes() {
+function backToModes(restoreMode) {
     stopAutoPlay();
     STATE.mode = null;
     STATE.currentGameId = null;
@@ -203,6 +229,12 @@ function backToModes() {
     switchTab("mode-select");
     document.getElementById("event-log-content").innerHTML = "";
     document.getElementById("turn-indicator").textContent = "";
+    if (restoreMode) selectMode(restoreMode);
+}
+
+// 竞技场再战：清理对局后直接回到竞技场配置（选边/下注面板保留）
+function rematchArena() {
+    backToModes("arena");
 }
 
 // ===================== WebSocket =====================
@@ -356,7 +388,15 @@ function savePoints() {
 
 function updatePointsUI() {
     const points = loadPoints();
-    document.getElementById("arena-points-value").textContent = points.toLocaleString();
+    const el = document.getElementById("arena-points-value");
+    const next = points.toLocaleString();
+    if (el.textContent !== next && el.dataset.touched) {
+        el.classList.remove("points-pulse");
+        void el.offsetWidth;   // 重启动画
+        el.classList.add("points-pulse");
+    }
+    el.dataset.touched = "1";
+    el.textContent = next;
     document.getElementById("arena-reset-points").classList.toggle("hidden", points >= 10);
 }
 
@@ -692,96 +732,97 @@ function updateGunDisplay(gun, isGameOver, knownShells) {
     renderChamber(document.getElementById("chamber-visual"), gun, isGameOver, knownShells);
 }
 
+// 单条事件的 DOM 构建（决策详情展开逻辑内聚于此）
+function buildEventEntry(e) {
+    const div = document.createElement("div");
+    div.classList.add("event-entry", e.type);
+
+    // 实弹开火特效
+    if (e.type === "fire" && e.is_live) {
+        div.classList.add("live-fire");
+    }
+
+    // 私有情报：服务端按 viewer 过滤（masked 标志），前端只做样式分层
+    if (e.type === "peek") {
+        div.classList.add(e.masked ? "private-masked" : "private-own");
+    } else if (e.type === "item_use") {
+        div.classList.add("item-event");
+    }
+
+    const msgSpan = document.createElement("span");
+    msgSpan.textContent = e.message || "";
+    div.appendChild(msgSpan);
+
+    // 决策详情 - breakdown
+    if (e.type === "decision" && e.breakdown && e.breakdown.reanalyzed) {
+        const bd = e.breakdown;
+        const toggle = document.createElement("span");
+        toggle.className = "breakdown-toggle";
+        toggle.textContent = "📊 详情";
+        toggle.addEventListener("click", () => {
+            const existing = div.querySelector(".breakdown-detail");
+            if (existing) { existing.remove(); toggle.textContent = "📊 详情"; return; }
+            toggle.textContent = "📊 收起";
+
+            const detail = document.createElement("div");
+            detail.className = "breakdown-detail";
+            if (bd.kernel === "utility") {
+                // 恶魔轮盘：效用评估明细
+                const fmt = v => (v >= 0 ? "+" : "") + v;
+                detail.innerHTML = `
+                    <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
+                    <span class="bd-label">实弹概率 p</span><span class="bd-value">${bd.p_live}</span>
+                    <span class="bd-label">蝉联价值 T</span><span class="bd-value">${bd.t_value}</span>
+                    <span class="bd-label">人格偏置</span><span class="bd-value">${fmt(bd.tie_bias)}</span>
+                    <span class="bd-label">对手威胁</span><span class="bd-value">${bd.opp_threat != null ? bd.opp_threat : "—"}</span>
+                    <span class="bd-label">威胁偏置</span><span class="bd-value">${bd.threat_bias != null ? fmt(bd.threat_bias) : "—"}</span>
+                    <span class="bd-label">λ 击敌/自伤/交权</span><span class="bd-value">${bd.lam_kill} / ${bd.lam_own} / ${bd.lam_give}</span>
+                    <span class="bd-label">EU 自击</span><span class="bd-value">${bd.eu_self}</span>
+                    <span class="bd-label">EU 击敌</span><span class="bd-value">${bd.eu_enemy}</span>
+                    <span class="bd-label">心态修正</span><span class="bd-value">${fmt(bd.mindset_delta)}</span>
+                    <span class="bd-label">冷静系数</span><span class="bd-value">${bd.calm_factor}</span>
+                    <span class="bd-label">随机扰动</span><span class="bd-value">${fmt(bd.noise_delta)}</span>
+                    <span class="bd-label" style="color:var(--accent)">最终效用差</span><span class="bd-value bd-highlight">${fmt(bd.final_diff)} → ${bd.choice === "opponent" ? "击敌" : "自击"}</span>
+                `;
+            } else {
+                // 经典模式：攻击倾向明细
+                detail.innerHTML = `
+                    <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
+                    <span class="bd-label">实际 P0</span><span class="bd-value">${bd.pr}</span>
+                    <span class="bd-label">基础攻击欲</span><span class="bd-value">${bd.base_attack}</span>
+                    <span class="bd-label">蝉联期权</span><span class="bd-value">${bd.option_value != null ? "-" + bd.option_value : "—"}</span>
+                    <span class="bd-label">心态修正</span><span class="bd-value">${bd.mindset_delta >= 0 ? "+" : ""}${bd.mindset_delta}</span>
+                    <span class="bd-label">修正后</span><span class="bd-value">${bd.attack_after_mindset}</span>
+                    <span class="bd-label">冷静压制</span><span class="bd-value">${bd.calm_delta >= 0 ? "+" : ""}${bd.calm_delta}</span>
+                    <span class="bd-label">压制后</span><span class="bd-value">${bd.attack_after_calm}</span>
+                    <span class="bd-label">随机扰动</span><span class="bd-value">${bd.random_delta >= 0 ? "+" : ""}${bd.random_delta}</span>
+                    <span class="bd-label" style="color:var(--accent)">最终攻击欲</span><span class="bd-value bd-highlight">${bd.final_attack}</span>
+                `;
+            }
+            div.appendChild(detail);
+        });
+        div.appendChild(toggle);
+    }
+    return div;
+}
+
+// 增量渲染：只追加新事件，保留已展开的决策详情（事件数回退视为新一局，全量重建）
 function updateEventLog(events) {
     const container = document.getElementById("event-log-content");
     const prevCount = STATE._lastEventCount;
     STATE._lastEventCount = events.length;
 
-    container.innerHTML = "";
+    const isNewGame = prevCount === 0 || events.length < prevCount;
+    if (isNewGame) container.innerHTML = "";
+    const startIdx = isNewGame ? 0 : prevCount;
 
-    events.forEach((e, idx) => {
-        const div = document.createElement("div");
-        div.classList.add("event-entry", e.type);
+    for (let i = startIdx; i < events.length; i++) {
+        container.appendChild(buildEventEntry(events[i]));
+    }
+    if (events.length > startIdx) container.scrollTop = container.scrollHeight;
 
-        // 实弹开火特效
-        if (e.type === "fire" && e.is_live) {
-            div.classList.add("live-fire");
-        }
-
-        // 私有情报：服务端按 viewer 过滤（masked 标志），前端只做样式分层
-        let msg = e.message || "";
-        if (e.type === "peek") {
-            if (e.masked) {
-                div.classList.add("private-masked");
-            } else {
-                div.classList.add("private-own");
-            }
-        } else if (e.type === "item_use") {
-            div.classList.add("item-event");
-        }
-
-        // 消息文本
-        const msgSpan = document.createElement("span");
-        msgSpan.textContent = msg;
-        div.appendChild(msgSpan);
-
-        // 决策详情 - breakdown
-        if (e.type === "decision" && e.breakdown && e.breakdown.reanalyzed) {
-            const bd = e.breakdown;
-            const toggle = document.createElement("span");
-            toggle.className = "breakdown-toggle";
-            toggle.textContent = "📊 详情";
-            toggle.addEventListener("click", () => {
-                const existing = div.querySelector(".breakdown-detail");
-                if (existing) { existing.remove(); toggle.textContent = "📊 详情"; return; }
-                toggle.textContent = "📊 收起";
-
-                const detail = document.createElement("div");
-                detail.className = "breakdown-detail";
-                if (bd.kernel === "utility") {
-                    // 恶魔轮盘：效用评估明细
-                    const fmt = v => (v >= 0 ? "+" : "") + v;
-                    detail.innerHTML = `
-                        <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
-                        <span class="bd-label">实弹概率 p</span><span class="bd-value">${bd.p_live}</span>
-                        <span class="bd-label">蝉联价值 T</span><span class="bd-value">${bd.t_value}</span>
-                        <span class="bd-label">人格偏置</span><span class="bd-value">${fmt(bd.tie_bias)}</span>
-                        <span class="bd-label">对手威胁</span><span class="bd-value">${bd.opp_threat != null ? bd.opp_threat : "—"}</span>
-                        <span class="bd-label">威胁偏置</span><span class="bd-value">${bd.threat_bias != null ? fmt(bd.threat_bias) : "—"}</span>
-                        <span class="bd-label">λ 击敌/自伤/交权</span><span class="bd-value">${bd.lam_kill} / ${bd.lam_own} / ${bd.lam_give}</span>
-                        <span class="bd-label">EU 自击</span><span class="bd-value">${bd.eu_self}</span>
-                        <span class="bd-label">EU 击敌</span><span class="bd-value">${bd.eu_enemy}</span>
-                        <span class="bd-label">心态修正</span><span class="bd-value">${fmt(bd.mindset_delta)}</span>
-                        <span class="bd-label">冷静系数</span><span class="bd-value">${bd.calm_factor}</span>
-                        <span class="bd-label">随机扰动</span><span class="bd-value">${fmt(bd.noise_delta)}</span>
-                        <span class="bd-label" style="color:var(--accent)">最终效用差</span><span class="bd-value bd-highlight">${fmt(bd.final_diff)} → ${bd.choice === "opponent" ? "击敌" : "自击"}</span>
-                    `;
-                } else {
-                    // 经典模式：攻击倾向明细
-                    detail.innerHTML = `
-                        <span class="bd-label">策略惯性 S'</span><span class="bd-value">${bd.s_real}</span>
-                        <span class="bd-label">实际 P0</span><span class="bd-value">${bd.pr}</span>
-                        <span class="bd-label">基础攻击欲</span><span class="bd-value">${bd.base_attack}</span>
-                        <span class="bd-label">蝉联期权</span><span class="bd-value">${bd.option_value != null ? "-" + bd.option_value : "—"}</span>
-                        <span class="bd-label">心态修正</span><span class="bd-value">${bd.mindset_delta >= 0 ? "+" : ""}${bd.mindset_delta}</span>
-                        <span class="bd-label">修正后</span><span class="bd-value">${bd.attack_after_mindset}</span>
-                        <span class="bd-label">冷静压制</span><span class="bd-value">${bd.calm_delta >= 0 ? "+" : ""}${bd.calm_delta}</span>
-                        <span class="bd-label">压制后</span><span class="bd-value">${bd.attack_after_calm}</span>
-                        <span class="bd-label">随机扰动</span><span class="bd-value">${bd.random_delta >= 0 ? "+" : ""}${bd.random_delta}</span>
-                        <span class="bd-label" style="color:var(--accent)">最终攻击欲</span><span class="bd-value bd-highlight">${bd.final_attack}</span>
-                    `;
-                }
-                div.appendChild(detail);
-            });
-            div.appendChild(toggle);
-        }
-
-        container.appendChild(div);
-    });
-    container.scrollTop = container.scrollHeight;
-
-    // 新 fire 事件触发动画
-    if (events.length > prevCount) {
+    // 新 fire 事件触发动画（新对局的重建不回放动画）
+    if (!isNewGame && events.length > prevCount) {
         for (let i = prevCount; i < events.length; i++) {
             const evt = events[i];
             if (evt.type === "fire") {
@@ -843,6 +884,8 @@ function showGameOver(state) {
     const modal = document.getElementById("game-over-modal");
     modal.classList.remove("hidden");
     document.getElementById("game-over-message").textContent = `🏆 ${state.winner} 获胜！`;
+    // 竞技场对局提供一键再战（保留选边与下注面板）
+    document.getElementById("btn-rematch-arena").classList.toggle("hidden", STATE.mode !== "arena");
     if (state.p1.name === state.winner) {
         document.getElementById("player1-card").classList.add("winner-card");
         document.getElementById("player2-card").classList.add("dead");
@@ -908,6 +951,12 @@ function autoPlay() {
     autoPlayStep();
 }
 
+// 自动播放速度：🐢 慢 1.4s / ▶ 标准 0.8s / ⚡ 快 0.35s（播放中切换立即生效）
+function setAutoSpeed(btn) {
+    STATE.autoSpeedDelay = +btn.dataset.delay;
+    $$("#speed-control .speed-btn").forEach(b => b.classList.toggle("active", b === btn));
+}
+
 function stopAutoPlay() {
     STATE.isAutoPlaying = false;
     if (STATE.autoPlayTimer) { clearTimeout(STATE.autoPlayTimer); STATE.autoPlayTimer = null; }
@@ -933,7 +982,7 @@ async function autoPlayStep() {
             stopAutoPlay();
             return;
         }
-        STATE.autoPlayTimer = setTimeout(autoPlayStep, 800);
+        STATE.autoPlayTimer = setTimeout(autoPlayStep, STATE.autoSpeedDelay);
     } catch (e) {
         showToast(`自动播放出错: ${e.message}`, "error");
         stopAutoPlay();

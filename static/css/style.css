@@ -528,6 +528,17 @@ body::before {
     background: #1a1a25;
     border-color: #1a1a25;
 }
+.chamber-slot.fired::before {
+    content: '✕';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #3d3d4d;
+    font-weight: 700;
+}
 .chamber-slot.current {
     border-color: var(--accent);
     box-shadow: 0 0 10px var(--accent);
@@ -537,14 +548,27 @@ body::before {
     0%, 100% { box-shadow: 0 0 6px var(--accent); }
     50% { box-shadow: 0 0 16px var(--accent); }
 }
-.chamber-slot.live-known {
+/* 放大镜/电话得知的弹型标记（类名与 renderChamber 对应） */
+.chamber-slot.known-live {
     background: var(--red) !important;
     border-color: var(--red) !important;
     box-shadow: 0 0 8px rgba(244,67,54,0.5);
 }
-.chamber-slot.empty-known {
-    background: #2a2a35 !important;
-    border-color: #3a3a45 !important;
+.chamber-slot.known-live::after {
+    content: '!';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 900;
+    color: #fff;
+}
+.chamber-slot.known-blank {
+    background: #2a2a45 !important;
+    border-color: var(--blue) !important;
+    box-shadow: 0 0 6px rgba(33,150,243,0.35);
 }
 
 /* Turn Indicator */
@@ -659,6 +683,51 @@ body::before {
     padding: 20px 0;
     flex-wrap: wrap;
 }
+#ai-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+/* 自动播放速度控制 */
+.speed-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+}
+.speed-label { font-size: 0.72rem; color: var(--text-muted); margin-right: 2px; }
+.speed-btn {
+    width: 32px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: var(--transition);
+    line-height: 1;
+}
+.speed-btn:hover { border-color: var(--border-active); color: var(--text); }
+.speed-btn.active {
+    background: var(--accent2);
+    border-color: var(--blue);
+    color: #fff;
+    box-shadow: 0 0 8px var(--blue-glow);
+}
+
+/* 积分变动脉冲 */
+@keyframes pointsPulse {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.4); text-shadow: 0 0 14px var(--gold-glow); }
+    100% { transform: scale(1); }
+}
+.points-pulse { display: inline-block; animation: pointsPulse 0.6s ease; }
 
 /* ==================== Modal ==================== */
 .modal {
@@ -1243,4 +1312,9 @@ body::before {
 @media (max-width: 720px) {
     .arena-pick { flex-direction: column; }
     .arena-vs { text-align: center; }
+    .fighter-grid { grid-template-columns: repeat(2, 1fr); }
+    .arena-bet-form { gap: 8px; }
+    .modal-content { padding: 32px 20px; }
+    .event-log-content { max-height: 200px; font-size: 0.82rem; }
+    .speed-control { width: 100%; justify-content: center; }
 }
