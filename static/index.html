@@ -149,10 +149,10 @@
 
             <!-- 模型竞技场配置 -->
             <div id="arena-config" class="config-panel hidden">
-                <h2>🏟️ 模型竞技场 <span class="badge badge-preview">预览模式</span></h2>
+                <h2>🏟️ 模型竞技场</h2>
                 <p class="arena-intro">
                     两名 AI 模型各持一把随机装填的轮盘，依次开枪决出胜负。
-                    比赛开始前可对任意一方下注观战，实时预测胜负赢取积分。
+                    下注前可查看选手性格参数与历史战绩，押中赢家按赔率赢取积分。
                 </p>
 
                 <!-- 选边 -->
@@ -160,27 +160,32 @@
                     <div class="arena-side">
                         <div class="arena-side-title red">🔴 红方</div>
                         <div class="fighter-grid" id="arena-red-grid"></div>
+                        <div class="fighter-intel" id="arena-red-intel"></div>
                     </div>
                     <div class="arena-vs">VS</div>
                     <div class="arena-side">
                         <div class="arena-side-title blue">🔵 蓝方</div>
                         <div class="fighter-grid" id="arena-blue-grid"></div>
+                        <div class="fighter-intel" id="arena-blue-intel"></div>
                     </div>
                 </div>
                 <div class="arena-pick-actions">
                     <button class="btn btn-secondary" onclick="arenaRandomPair()">🎲 随机配对</button>
                 </div>
 
-                <!-- 积分与下注（预览占位） -->
+                <!-- 积分与下注 -->
                 <div class="arena-bet-panel">
-                    <div class="arena-points">💰 我的积分：<b>1,000</b><span class="points-hint">（预览模式 · 暂不计入）</span></div>
-                    <div class="arena-bet-form disabled" onclick="arenaBetClick()">
-                        <span class="bet-side"><input type="radio" disabled>🔴 红方</span>
-                        <span class="bet-side"><input type="radio" disabled>🔵 蓝方</span>
-                        <input type="number" class="bet-amount" value="100" min="10" step="10" disabled>
-                        <button class="btn btn-gold" disabled>🔒 下注</button>
+                    <div class="arena-points">
+                        <span>💰 我的积分：<b id="arena-points-value">1,000</b></span>
+                        <button class="btn-link hidden" id="arena-reset-points" onclick="arenaResetPoints()">破产？点此重置</button>
                     </div>
-                    <div class="arena-bet-note">正式投注功能即将开放，当前仅展示对战过程</div>
+                    <div class="arena-bet-form">
+                        <label class="bet-side red"><input type="radio" name="bet-side" value="red" onchange="refreshArenaIntel()">🔴 红方 <span class="odds-chip" id="odds-red">--</span></label>
+                        <label class="bet-side blue"><input type="radio" name="bet-side" value="blue" onchange="refreshArenaIntel()">🔵 蓝方 <span class="odds-chip" id="odds-blue">--</span></label>
+                        <input type="number" class="bet-amount" id="bet-amount" value="100" min="10" step="10">
+                        <button class="btn btn-gold" id="btn-bet-start" onclick="startArena(true)">🎯 下注开战</button>
+                    </div>
+                    <div class="arena-bet-note">赔率由双方历史胜率推导；不选边则不下注，仅观战</div>
                 </div>
 
                 <div class="config-row">
@@ -194,14 +199,14 @@
                     </div>
                     <div class="config-col classic-only">
                         <label>弹巢数</label>
-                        <select id="ar-slots">
+                        <select id="ar-slots" onchange="refreshArenaIntel()">
                             <option value="6" selected>6</option>
                             <option value="8">8</option>
                         </select>
                     </div>
                     <div class="config-col classic-only">
                         <label>实弹数</label>
-                        <select id="ar-bullets">
+                        <select id="ar-bullets" onchange="refreshArenaIntel()">
                             <option value="1" selected>1</option>
                             <option value="2">2</option>
                         </select>
@@ -216,14 +221,14 @@
                     </div>
                     <div class="config-col buckshot-only hidden">
                         <label>道具</label>
-                        <select id="ar-items">
+                        <select id="ar-items" onchange="refreshArenaIntel()">
                             <option value="standard" selected>标准 5 件</option>
                             <option value="full">全量 9 件（DoN）</option>
                             <option value="none">关闭</option>
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="startArena()">🚀 开战观战</button>
+                <button class="btn btn-primary" onclick="startArena(false)">🚀 直接开战观战</button>
                 <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
             </div>
 
@@ -398,6 +403,7 @@
                 <div class="modal-content">
                     <h2 id="game-over-title">🏆 游戏结束</h2>
                     <p id="game-over-message"></p>
+                    <p id="game-over-bet" class="bet-result hidden"></p>
                     <button class="btn btn-primary" onclick="backToModes()">🔄 再来一局</button>
                 </div>
             </div>

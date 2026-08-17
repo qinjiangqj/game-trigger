@@ -13,7 +13,29 @@ const STATE = {
     _prevScoreKey: "",
     humanName: null,       // 人类玩家名（观战模式为 null，用于私有信息过滤）
     arenaPick: { red: null, blue: null },   // 竞技场选边
+    points: null,          // 竞技场积分（localStorage 持久化）
+    arenaBet: null,        // 进行中的下注 {side, amount, odds, playerName}
 };
+
+// 基准胜率（%）：10 万届循环赛，benchmarks/benchmark-20260817.md + 决斗轮盘 20260818
+const BENCHMARK_WINRATES = {
+    classic: { Kimi: 53.1, GPT: 52.9, Claude: 51.2, GLM: 50.4, Gemini: 49.1, DeepSeek: 43.2 },
+    duel:    { GPT: 52.4, Kimi: 52.1, GLM: 51.0, Claude: 50.3, Gemini: 49.5, DeepSeek: 44.8 },
+    buckshot_none:     { GPT: 51.0, Kimi: 50.9, Claude: 50.8, Gemini: 50.3, GLM: 49.1, DeepSeek: 47.9 },
+    buckshot_standard: { GPT: 51.3, Claude: 50.6, GLM: 50.0, Kimi: 49.4, DeepSeek: 49.4, Gemini: 49.3 },
+    buckshot_full:     { GPT: 50.6, GLM: 50.5, Claude: 49.9, Gemini: 49.7, DeepSeek: 49.7, Kimi: 49.7 },
+};
+
+// 性格参数元数据：标签 + 条形图满格值（与 engine/config.py 模板量级对应）
+const PARAM_META = [
+    { key: "R", label: "攻击", max: 0.4, tip: "R 攻击阈值：实弹概率超过该值倾向击敌，越高越像赌徒" },
+    { key: "S", label: "惯性", max: 0.7, tip: "S 策略惯性：越爱重复上一次的选择" },
+    { key: "C", label: "冷静", max: 0.8, tip: "C 冷静系数：越高越不受心态波动影响" },
+    { key: "L", label: "波动", max: 0.2, tip: "L 随机波动：决策噪音幅度，越高越不可测" },
+];
+
+const ARENA_INITIAL_POINTS = 1000;
+const ARENA_POINTS_KEY = "arena_points";
 
 // 道具元数据（与 engine/items.py ITEM_REGISTRY 对应）
 const ITEM_META = {
@@ -249,6 +271,7 @@ function onModeChange(prefix) {
     panel.querySelectorAll(".classic-only").forEach(el =>
         el.classList.toggle("hidden", mode !== "classic" && mode !== "duel"));
     panel.querySelectorAll(".buckshot-only").forEach(el => el.classList.toggle("hidden", mode !== "buckshot"));
+    if (prefix === "ar") refreshArenaIntel();   // 模式/道具变化影响胜率表与赔率
 }
 
 function readModeConfig(prefix) {
@@ -284,6 +307,7 @@ function initArenaGrid() {
     });
     // 默认随机配对（未选择时）
     if (!STATE.arenaPick.red || !STATE.arenaPick.blue) arenaRandomPair(true);
+    refreshArenaIntel();
 }
 
 function pickFighter(side, name) {
@@ -295,6 +319,7 @@ function pickFighter(side, name) {
     }
     STATE.arenaPick[side] = name;
     refreshFighterCards();
+    refreshArenaIntel();
 }
 
 function refreshFighterCards() {
@@ -311,17 +336,110 @@ function arenaRandomPair(silent) {
     STATE.arenaPick.red = a.name;
     STATE.arenaPick.blue = b.name;
     refreshFighterCards();
+    refreshArenaIntel();
     if (!silent) showToast(`随机配对：${a.name} vs ${b.name}`, "info");
 }
 
-function arenaBetClick() {
-    showToast("🔒 正式投注功能即将开放，当前为预览模式", "info");
+// —— 下注情报与赔率 ——
+
+function loadPoints() {
+    if (STATE.points == null) {
+        const saved = parseInt(localStorage.getItem(ARENA_POINTS_KEY), 10);
+        STATE.points = Number.isFinite(saved) ? saved : ARENA_INITIAL_POINTS;
+    }
+    return STATE.points;
 }
 
-async function startArena() {
+function savePoints() {
+    localStorage.setItem(ARENA_POINTS_KEY, String(STATE.points));
+}
+
+function updatePointsUI() {
+    const points = loadPoints();
+    document.getElementById("arena-points-value").textContent = points.toLocaleString();
+    document.getElementById("arena-reset-points").classList.toggle("hidden", points >= 10);
+}
+
+// 当前配置对应的胜率表键（弹巢/实弹数不影响基准表，按主模式与道具集取）
+function getWinrateTable() {
+    const mode = document.getElementById("ar-mode").value;
+    if (mode !== "buckshot") return BENCHMARK_WINRATES[mode];
+    const items = document.getElementById("ar-items").value;
+    return BENCHMARK_WINRATES[`buckshot_${items}`] || BENCHMARK_WINRATES.buckshot_standard;
+}
+
+function computeOdds() {
+    const table = getWinrateTable();
+    const wr = table[STATE.arenaPick.red] || 50;
+    const wb = table[STATE.arenaPick.blue] || 50;
+    const pRed = wr / (wr + wb);   // 双方胜率归一化为对本场的胜出概率
+    return {
+        red: Math.max(1.01, +(1 / pRed).toFixed(2)),
+        blue: Math.max(1.01, +(1 / (1 - pRed)).toFixed(2)),
+    };
+}
+
+// 渲染选手情报卡（性格参数条 + 历史胜率）并刷新赔率
+function refreshArenaIntel() {
+    const table = getWinrateTable();
+    const odds = computeOdds();
+    const intel = STATE.players.length
+        ? { [STATE.arenaPick.red]: STATE.players.find(p => p.name === STATE.arenaPick.red),
+            [STATE.arenaPick.blue]: STATE.players.find(p => p.name === STATE.arenaPick.blue) }
+        : {};
+    ["red", "blue"].forEach(side => {
+        const el = document.getElementById(`arena-${side}-intel`);
+        const name = STATE.arenaPick[side];
+        const p = intel[name];
+        if (!name || !p) { el.innerHTML = ""; return; }
+        const wr = table[name];
+        const bars = PARAM_META.map(m => `
+            <div class="param-row" title="${m.tip}">
+                <span class="param-label">${m.label}</span>
+                <span class="param-track"><span class="param-fill" style="width:${Math.min(100, p[m.key] / m.max * 100)}%"></span></span>
+                <span class="param-value">${p[m.key].toFixed(2)}</span>
+            </div>`).join("");
+        el.innerHTML = `
+            <div class="intel-head">
+                <span class="intel-name">${name}</span>
+                <span class="intel-wr">历史胜率 <b>${wr != null ? wr.toFixed(1) + "%" : "--"}</b></span>
+                <span class="odds-chip ${side}">赔率 ${odds[side].toFixed(2)}</span>
+            </div>
+            ${bars}`;
+    });
+    document.getElementById("odds-red").textContent = odds.red.toFixed(2);
+    document.getElementById("odds-blue").textContent = odds.blue.toFixed(2);
+    updatePointsUI();
+}
+
+function arenaResetPoints() {
+    STATE.points = ARENA_INITIAL_POINTS;
+    savePoints();
+    updatePointsUI();
+    showToast(`积分已重置为 ${ARENA_INITIAL_POINTS.toLocaleString()}`, "info");
+}
+
+async function startArena(withBet) {
     const { red, blue } = STATE.arenaPick;
     if (!red || !blue) { showToast("请先选择双方选手", "error"); return; }
     if (red === blue) { showToast("两名选手不能相同", "error"); return; }
+
+    STATE.arenaBet = null;
+    if (withBet) {
+        const sideEl = document.querySelector('input[name="bet-side"]:checked');
+        if (!sideEl) { showToast("请先选择下注一方（红/蓝）", "error"); return; }
+        const amount = Math.floor(+document.getElementById("bet-amount").value);
+        if (!Number.isFinite(amount) || amount < 10) { showToast("下注金额至少 10 积分", "error"); return; }
+        if (amount % 10 !== 0) { showToast("下注金额需为 10 的整数倍", "error"); return; }
+        if (amount > loadPoints()) { showToast("积分不足，请调低下注金额", "error"); return; }
+        const odds = computeOdds();
+        const side = sideEl.value;
+        STATE.arenaBet = { side, amount, odds: odds[side], playerName: STATE.arenaPick[side] };
+        STATE.points -= amount;
+        savePoints();
+        updatePointsUI();
+    }
+
     const cfg = readModeConfig("ar");
     try {
         const data = await apiPost("/api/game/create", {
@@ -335,7 +453,32 @@ async function startArena() {
         updateGameView(data.state);
         autoPlay();                  // 竞技场：自动播放观战
     } catch (e) {
+        // 创建失败：退回下注
+        if (STATE.arenaBet) {
+            STATE.points += STATE.arenaBet.amount;
+            savePoints(); updatePointsUI();
+            STATE.arenaBet = null;
+        }
         showToast(`创建比赛失败: ${e.message}`, "error");
+    }
+}
+
+// 赛果结算：由 showGameOver 调用（仅竞技场且有效下注时）
+function settleArenaBet(state) {
+    const betEl = document.getElementById("game-over-bet");
+    if (!STATE.arenaBet) { betEl.classList.add("hidden"); return; }
+    const bet = STATE.arenaBet;
+    STATE.arenaBet = null;
+    const win = state.winner === bet.playerName;
+    if (win) {
+        const payout = Math.round(bet.amount * bet.odds);
+        STATE.points += payout;
+        savePoints(); updatePointsUI();
+        betEl.textContent = `🎉 押中 ${bet.playerName}！+${(payout - bet.amount).toLocaleString()} 积分（返还 ${payout.toLocaleString()}，赔率 ${bet.odds.toFixed(2)}）`;
+        betEl.className = "bet-result win";
+    } else {
+        betEl.textContent = `💸 ${bet.playerName} 落败，输掉 ${bet.amount.toLocaleString()} 积分`;
+        betEl.className = "bet-result lose";
     }
 }
 
@@ -707,6 +850,7 @@ function showGameOver(state) {
         document.getElementById("player2-card").classList.add("winner-card");
         document.getElementById("player1-card").classList.add("dead");
     }
+    settleArenaBet(state);
 }
 
 // ===================== 游戏操作 =====================

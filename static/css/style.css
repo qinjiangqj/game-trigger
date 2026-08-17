@@ -1048,15 +1048,7 @@ body::before {
     background: linear-gradient(90deg, rgba(33, 150, 243, 0.07), transparent 70%);
 }
 
-/* ===================== 模型竞技场（预览模式） ===================== */
-.badge-preview {
-    background: rgba(245, 197, 24, 0.12);
-    border-color: rgba(245, 197, 24, 0.45);
-    color: var(--gold);
-    font-weight: 600;
-    margin-left: 8px;
-    vertical-align: middle;
-}
+/* ===================== 模型竞技场 ===================== */
 .arena-intro {
     color: var(--text-dim);
     font-size: 0.9rem;
@@ -1112,10 +1104,9 @@ body::before {
 .fighter-name { font-weight: 700; font-size: 0.92rem; color: var(--text); }
 .fighter-char { font-size: 0.72rem; color: var(--text-dim); }
 .arena-pick-actions { display: flex; justify-content: center; margin-bottom: 16px; }
-
 .arena-bet-panel {
     background: var(--surface2);
-    border: 1px dashed var(--border-active);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 14px 16px;
     margin-bottom: 16px;
@@ -1123,35 +1114,132 @@ body::before {
     flex-direction: column;
     gap: 10px;
 }
-.arena-points { font-size: 0.95rem; color: var(--text); }
+.arena-points {
+    font-size: 0.95rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
 .arena-points b { color: var(--gold); font-size: 1.1rem; }
-.points-hint { color: var(--text-muted); font-size: 0.78rem; margin-left: 6px; }
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--gold);
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline dotted;
+    opacity: 0.85;
+}
+.btn-link:hover { opacity: 1; }
 .arena-bet-form {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 14px;
     flex-wrap: wrap;
-    filter: grayscale(0.6);
-    opacity: 0.75;
-    cursor: not-allowed;
 }
-.bet-side { display: inline-flex; align-items: center; gap: 5px; font-size: 0.88rem; color: var(--text-dim); }
-.bet-amount {
-    width: 90px;
+.bet-side {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
     padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.bet-side:hover { border-color: var(--border-active); color: var(--text); }
+.bet-side.red:has(input:checked) { border-color: var(--accent); color: var(--text); box-shadow: 0 0 10px var(--accent-glow); }
+.bet-side.blue:has(input:checked) { border-color: var(--blue); color: var(--text); box-shadow: 0 0 10px var(--blue-glow); }
+.bet-side input { accent-color: var(--accent); }
+.bet-side.blue input { accent-color: var(--blue); }
+.bet-amount {
+    width: 100px;
+    padding: 7px 10px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
     color: var(--text);
     font-size: 0.88rem;
 }
+.bet-amount:focus { outline: none; border-color: var(--gold); }
 .arena-bet-note {
     text-align: center;
     font-size: 0.8rem;
-    color: var(--gold);
-    opacity: 0.85;
+    color: var(--text-muted);
 }
+
+/* 选手情报卡（下注参考） */
+.fighter-intel {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    min-height: 96px;
+}
+.intel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+.intel-name { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+.intel-wr { font-size: 0.8rem; color: var(--text-dim); }
+.intel-wr b { color: var(--gold); font-size: 0.92rem; }
+.odds-chip {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(245, 197, 24, 0.12);
+    border: 1px solid rgba(245, 197, 24, 0.4);
+    color: var(--gold);
+    white-space: nowrap;
+}
+.odds-chip.red { background: rgba(233, 69, 96, 0.12); border-color: rgba(233, 69, 96, 0.45); color: var(--accent); }
+.odds-chip.blue { background: rgba(33, 150, 243, 0.12); border-color: rgba(33, 150, 243, 0.45); color: var(--blue); }
+.param-row {
+    display: grid;
+    grid-template-columns: 42px 1fr 38px;
+    align-items: center;
+    gap: 8px;
+    margin: 5px 0;
+    cursor: help;
+}
+.param-label { font-size: 0.75rem; color: var(--text-dim); }
+.param-track {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.param-fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent2), var(--blue));
+    transition: width 0.4s ease;
+}
+.arena-side.blue .param-fill { background: linear-gradient(90deg, var(--accent2), var(--blue)); }
+.param-value { font-size: 0.75rem; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 下注结算结果 */
+.bet-result {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 8px 0 4px;
+    padding: 8px 14px;
+    border-radius: var(--radius-xs);
+}
+.bet-result.win { color: var(--gold); background: rgba(245, 197, 24, 0.08); border: 1px solid rgba(245, 197, 24, 0.35); }
+.bet-result.lose { color: var(--text-dim); background: rgba(136, 136, 136, 0.06); border: 1px solid rgba(136, 136, 136, 0.25); }
 @media (max-width: 720px) {
     .arena-pick { flex-direction: column; }
     .arena-vs { text-align: center; }
