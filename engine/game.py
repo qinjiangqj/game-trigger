@@ -31,8 +31,11 @@ class GameEvent:
     damage: Optional[int] = None        # fire 事件的伤害值（含手锯 ×2）
     private_to: Optional[str] = None    # 私有事件接收者
 
-    def to_dict(self, viewer: Optional[str] = None) -> dict:
-        """按 viewer 序列化：peek 类私有事件对非接收者隐藏结果（信息公平）。"""
+    def to_dict(self, viewer: Optional[str] = None, reveal: bool = False) -> dict:
+        """按 viewer 序列化：peek 类私有事件对非接收者隐藏结果（信息公平）。
+
+        reveal=True（终局复盘）：跳过遮蔽，向所有视角揭示情报内容。
+        """
         d = {"type": self.type, "player_name": self.player_name,
              "player_character": self.player_character, "action": self.action,
              "target_name": self.target_name, "is_live": self.is_live,
@@ -42,7 +45,7 @@ class GameEvent:
         if self.breakdown is not None:
             d["breakdown"] = self.breakdown
         if self.type == "peek" and self.private_to is not None \
-                and self.private_to != viewer:
+                and self.private_to != viewer and not reveal:
             d["message"] = f"🔒 {self.player_name} 获得了一条私密情报（对你不可见）"
             d["is_live"] = None
             d["masked"] = True
@@ -119,6 +122,7 @@ class GameSession:
         - 缺省（哨兵）：自动取人类玩家视角；纯 AI 对局为观战视角
         - viewer 指名玩家：仅该玩家可见自己的私有情报与 known_shells
         - viewer=None：观战视角，所有私有情报打码
+        - 终局（is_over）：私有情报全部揭示（复盘视角）
         """
         if viewer is _AUTO_VIEWER:
             viewer = self._viewer_name()
@@ -142,7 +146,8 @@ class GameSession:
             "winner": self.winner.name if self.winner else None,
             "turn_count": self.turn_count,
             "needs_human_input": self.current.is_human and not self.is_over,
-            "events": [e.to_dict(viewer=viewer) for e in self.events[-10:]],
+            "events": [e.to_dict(viewer=viewer, reveal=self.is_over)
+                       for e in self.events],
         }
         if self._guns is not None:
             # duel：双方弹巢状态均为公开信息（数量公开、顺序保密）

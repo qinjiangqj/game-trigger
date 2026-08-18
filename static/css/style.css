@@ -1116,6 +1116,11 @@ select:focus, .bet-amount:focus {
 .event-entry.peek { border-left-color: var(--steel-deep); }
 .event-entry.peek.private-masked { color: var(--text-muted); font-style: italic; }
 .event-entry.peek.private-own { color: #cfe2f2; }
+.event-entry.peek.private-revealed {
+    color: var(--gold-hi);
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(212, 175, 55, 0.08), transparent 70%);
+}
 .event-entry.item-event { border-left-color: #9c8034; color: #dcc27e; }
 .event-entry.system, .event-entry.start, .event-entry.reload, .event-entry.round {
     color: var(--text-muted);
@@ -1601,6 +1606,11 @@ select:focus, .bet-amount:focus {
 .tl-fire.live .tl-dot { background: var(--crimson); border-color: #e05a68; box-shadow: 0 0 10px var(--accent-glow); }
 .tl-fire.blank .tl-dot { background: var(--steel-deep); border-color: var(--blue); }
 .tl-item .tl-dot { background: #9c8034; border-color: #c8a94e; }
+.tl-item.peek-revealed .tl-dot { background: var(--gold); border-color: var(--gold-hi); box-shadow: 0 0 8px var(--gold-glow); }
+.tl-item.peek-revealed .tl-body p { color: var(--gold-hi); }
+.tl-item.peek-revealed { background: linear-gradient(90deg, rgba(212, 175, 55, 0.06), transparent 75%); margin-left: -12px; padding-left: 12px; }
+.tl-item.peek-hidden .tl-body p { color: var(--text-muted); font-style: italic; }
+.peek-src { color: var(--text-muted); font-size: 0.7rem; letter-spacing: 0.06em; }
 .tl-damage .tl-dot { background: var(--crimson-deep); border-color: #e05a68; }
 .tl-final .tl-dot { background: var(--gold); border-color: var(--gold-hi); box-shadow: 0 0 12px var(--gold-glow); }
 .tl-head {

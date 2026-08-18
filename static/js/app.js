@@ -659,7 +659,7 @@ function updateGameView(state) {
         updateGunDisplay(state.gun, state.is_over, viewer ? viewer.known_shells : null);
     }
     document.getElementById("turn-indicator").textContent = state.turn_count > 0 ? `第 ${state.turn_count} 回合` : "";
-    updateEventLog(state.events);
+    updateEventLog(state.events, !!state.is_over);
     updateActionBar(state);
     if (state.is_over) showGameOver(state);
 }
@@ -813,8 +813,15 @@ function buildEventEntry(e) {
     }
 
     // 私有情报：服务端按 viewer 过滤（masked 标志），前端只做样式分层
+    // 终局复盘：服务端揭示全部情报，未 mask 且非本人视角 → 揭示样式
     if (e.type === "peek") {
-        div.classList.add(e.masked ? "private-masked" : "private-own");
+        if (e.masked) {
+            div.classList.add("private-masked");
+        } else if (STATE.humanName && e.private_to === STATE.humanName) {
+            div.classList.add("private-own");
+        } else {
+            div.classList.add("private-revealed");
+        }
     } else if (e.type === "item_use") {
         div.classList.add("item-event");
     }
@@ -877,12 +884,13 @@ function buildEventEntry(e) {
 }
 
 // 增量渲染：只追加新事件，保留已展开的决策详情（事件数回退视为新一局，全量重建）
-function updateEventLog(events) {
+// isFinal=true：终局复盘，服务端已揭示全部私密情报，强制全量重建
+function updateEventLog(events, isFinal = false) {
     const container = document.getElementById("event-log-content");
     const prevCount = STATE._lastEventCount;
     STATE._lastEventCount = events.length;
 
-    const isNewGame = prevCount === 0 || events.length < prevCount;
+    const isNewGame = isFinal || prevCount === 0 || events.length < prevCount;
     if (isNewGame) {
         container.innerHTML = "";
         STATE.allEvents = [];
@@ -1112,12 +1120,16 @@ function buildBattleReportHTML(state) {
                     </div>
                 </div>`);
         } else if (e.type === "peek") {
+            // 终局复盘：未 mask = 服务端已揭示的实际情报内容
+            const revealed = !e.masked;
+            const itemMeta = ITEM_META[e.item_id] || {};
+            const srcLabel = itemMeta.name ? `${itemMeta.name}情报` : "情报";
             tl.push(`
-                <div class="tl-node tl-item">
+                <div class="tl-node tl-item ${revealed ? "peek-revealed" : "peek-hidden"}">
                     <span class="tl-dot"></span>
                     <div class="tl-body">
-                        <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-item">情报</span></div>
-                        <p>${e.message || "窥探了弹巢的秘密"}</p>
+                        <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-item">${revealed ? "情报·已揭晓" : "情报·隐藏"}</span></div>
+                        <p>${revealed ? (e.message || "窥探了弹巢的秘密") + ` <span class="peek-src">（${srcLabel}）</span>` : (e.message || "🔒 私密情报（对你不可见）")}</p>
                     </div>
                 </div>`);
         } else if (e.type === "damage") {
