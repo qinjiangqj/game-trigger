@@ -10,6 +10,7 @@ const STATE = {
     autoPlayTimer: null,
     isAutoPlaying: false,
     _lastEventCount: 0,
+    allEvents: [],           // 全量事件累积（战报数据源，服务端只推最后 10 条）
     _prevScoreKey: "",
     humanName: null,       // 人类玩家名（观战模式为 null，用于私有信息过滤）
     arenaPick: { red: null, blue: null },   // 竞技场选边
@@ -272,6 +273,7 @@ function backToModes(restoreMode) {
     STATE.currentTournamentId = null;
     STATE.humanName = null;
     STATE._lastEventCount = 0;
+    STATE.allEvents = [];
     STATE._prevScoreKey = "";
     closeAllWS();
     $$(".config-panel").forEach(p => p.classList.add("hidden"));
@@ -543,6 +545,7 @@ async function startArena(withBet) {
         STATE.currentGameId = data.game_id;
         STATE.humanName = null;      // 观战模式：私有信息对观众屏蔽
         STATE._lastEventCount = 0;
+    STATE.allEvents = [];
         showTab("game"); switchTab("game-view");
         connectWS("game", data.game_id);
         updateGameView(data.state);
@@ -590,6 +593,7 @@ async function startHumanVsAI() {
         STATE.currentGameId = data.game_id;
         STATE.humanName = "你";
         STATE._lastEventCount = 0;
+    STATE.allEvents = [];
         showTab("game"); switchTab("game-view");
         connectWS("game", data.game_id);
         updateGameView(data.state);
@@ -610,6 +614,7 @@ async function startAIvsAI() {
         STATE.currentGameId = data.game_id;
         STATE.humanName = null;      // 观战模式：私有信息对观众屏蔽
         STATE._lastEventCount = 0;
+    STATE.allEvents = [];
         showTab("game"); switchTab("game-view");
         connectWS("game", data.game_id);
         updateGameView(data.state);
@@ -878,11 +883,15 @@ function updateEventLog(events) {
     STATE._lastEventCount = events.length;
 
     const isNewGame = prevCount === 0 || events.length < prevCount;
-    if (isNewGame) container.innerHTML = "";
+    if (isNewGame) {
+        container.innerHTML = "";
+        STATE.allEvents = [];
+    }
     const startIdx = isNewGame ? 0 : prevCount;
 
     for (let i = startIdx; i < events.length; i++) {
         container.appendChild(buildEventEntry(events[i]));
+        STATE.allEvents.push(events[i]);
     }
     if (events.length > startIdx) container.scrollTop = container.scrollHeight;
 
@@ -978,32 +987,108 @@ function closeBattleReport() {
 }
 
 function buildBattleReportHTML(state) {
-    const evts = state.events || [];
+    const evts = STATE.allEvents.length ? STATE.allEvents : (state.events || []);
     const quote = REPORT_QUOTES[Math.floor(Math.random() * REPORT_QUOTES.length)];
     const now = new Date();
     const dateStr = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
     const modeLabel = MODE_LABELS[state.mode] || state.mode;
+    const p1 = state.p1, p2 = state.p2;
 
-    // 统计
+    // —— 全局统计 ——
     const fires = evts.filter(e => e.type === "fire");
     const liveShots = fires.filter(e => e.is_live).length;
     const blankShots = fires.length - liveShots;
-    const selfShots = fires.filter(e => e.action === "self").length;
-    const enemyShots = fires.filter(e => e.action === "opponent").length;
     const itemsUsed = evts.filter(e => e.type === "item_use").length;
+    const peeks = evts.filter(e => e.type === "peek").length;
 
-    // 时间线节点
+    // —— 每位选手统计 ——
+    function playerStats(name) {
+        const f = fires.filter(e => e.player_name === name);
+        const live = f.filter(e => e.is_live);
+        const blank = f.filter(e => !e.is_live);
+        const self = f.filter(e => e.action === "self");
+        const enemy = f.filter(e => e.action === "opponent");
+        const dmgDealt = f.filter(e => e.is_live && e.action === "opponent")
+                         .reduce((s, e) => s + (e.damage || 1), 0);
+        const dmgTaken = f.filter(e => e.is_live && e.target_name === name)
+                         .reduce((s, e) => s + (e.damage || 1), 0);
+        const items = evts.filter(e => e.type === "item_use" && e.player_name === name);
+        const itemIds = items.map(e => e.item_id).filter(Boolean);
+        return {
+            total: f.length, live: live.length, blank: blank.length,
+            self: self.length, enemy: enemy.length,
+            dmgDealt, dmgTaken,
+            items: itemIds.length, itemIds,
+            selfLiveRate: self.length ? (self.filter(e => e.is_live).length / self.length * 100) : 0,
+            enemyHitRate: enemy.length ? (enemy.filter(e => e.is_live).length / enemy.length * 100) : 0,
+        };
+    }
+    const s1 = playerStats(p1.name);
+    const s2 = playerStats(p2.name);
+
+    // —— 选手参数条 ——
+    function paramBar(label, val, isBlue) {
+        const pct = Math.round(val * 100);
+        return `<div class="rp-row">
+            <span class="rp-label">${label}</span>
+            <span class="rp-track"><span class="rp-fill ${isBlue ? "blue" : ""}" style="width:${pct}%"></span></span>
+            <span class="rp-value">${val.toFixed(2)}</span>
+        </div>`;
+    }
+    function playerParams(p, isBlue) {
+        return `<div class="report-params ${isBlue ? "side-blue" : "side-red"}">
+            <p class="rp-name">${p.name}<small>${p.character}</small></p>
+            ${paramBar("R 攻击", p.R, isBlue)}
+            ${paramBar("S 惯性", p.S, isBlue)}
+            ${paramBar("C 冷静", p.C, isBlue)}
+            ${paramBar("L 波动", p.L, isBlue)}
+            <p class="rp-mindset">终局心态 <b>${(p.M ?? 0).toFixed(2)}</b></p>
+        </div>`;
+    }
+
+    // —— 对比表 ——
+    function cmpRow(label, v1, v2, higherWins) {
+        const w1 = higherWins ? v1 > v2 : v1 < v2;
+        const w2 = higherWins ? v2 > v1 : v2 < v1;
+        return `<div class="cmp-row">
+            <span class="cmp-val ${w1 ? "cmp-win" : ""}">${v1}</span>
+            <span class="cmp-label">${label}</span>
+            <span class="cmp-val ${w2 ? "cmp-win" : ""}">${v2}</span>
+        </div>`;
+    }
+
+    // —— 时间线（含决策分析） ——
     const tl = [];
     let shotNo = 0;
-    evts.forEach(e => {
-        if (e.type === "fire") {
+    let firstBlood = null;
+    evts.forEach((e, idx) => {
+        if (e.type === "decision" && e.breakdown && e.breakdown.reanalyzed) {
+            const bd = e.breakdown;
+            const choiceLabel = bd.choice === "opponent" ? "击敌" : "自击";
+            let detail;
+            if (bd.kernel === "utility") {
+                detail = `效用差 <b>${(bd.final_diff >= 0 ? "+" : "") + bd.final_diff}</b> · 实弹率 ${bd.p_live} · EU自击 ${bd.eu_self} / EU击敌 ${bd.eu_enemy}`;
+            } else {
+                detail = `攻击欲 <b>${bd.final_attack}</b> · 基础 ${bd.base_attack} · 冷静压制 ${bd.calm_delta >= 0 ? "+" : ""}${bd.calm_delta}`;
+            }
+            tl.push(`
+                <div class="tl-node tl-decision">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body">
+                        <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-decision">决策</span><span class="tl-shot">→ ${choiceLabel}</span></div>
+                        <p class="tl-detail">${detail}</p>
+                    </div>
+                </div>`);
+        } else if (e.type === "fire") {
             shotNo += 1;
             const self = e.action === "self";
             const target = self ? "自己" : (e.target_name || "对手");
             const live = !!e.is_live;
+            if (live && !firstBlood) firstBlood = { shooter: e.player_name, target, shotNo, self };
             let outcome;
             if (self) outcome = live ? `命中实弹${e.damage > 1 ? ` ×${e.damage}` : ""}，付出代价` : "空枪，蝉联回合";
-            else outcome = live ? `命中${target}${e.damage > 1 ? ` ×${e.damage}` : ""}` : "空枪，回合移交";
+            else outcome = live ? `命中 ${target}${e.damage > 1 ? ` ×${e.damage}` : ""}` : "空枪，回合移交";
+            const dmgTag = live ? ` · 伤害 ${e.damage || 1}` : "";
             tl.push(`
                 <div class="tl-node tl-fire ${live ? "live" : "blank"}">
                     <span class="tl-dot"></span>
@@ -1011,7 +1096,7 @@ function buildBattleReportHTML(state) {
                         <div class="tl-head">
                             <b>${e.player_name}</b>
                             <span class="tl-tag ${live ? "tag-live" : "tag-blank"}">${live ? "实弹" : "空枪"}</span>
-                            <span class="tl-shot">SHOT ${String(shotNo).padStart(2, "0")}</span>
+                            <span class="tl-shot">SHOT ${String(shotNo).padStart(2, "0")}${dmgTag}</span>
                         </div>
                         <p>${self ? "枪口调转，对准自己" : `抬枪瞄准 ${target}`} —— ${outcome}</p>
                     </div>
@@ -1023,7 +1108,7 @@ function buildBattleReportHTML(state) {
                     <span class="tl-dot"></span>
                     <div class="tl-body">
                         <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-item">道具</span></div>
-                        <p>${meta.icon} 使用了${meta.name}</p>
+                        <p>${meta.icon} 使用了 ${meta.name}</p>
                     </div>
                 </div>`);
         } else if (e.type === "peek") {
@@ -1051,9 +1136,44 @@ function buildBattleReportHTML(state) {
         }
     });
 
+    // —— 关键时刻 ——
+    const moments = [];
+    if (firstBlood) {
+        moments.push(`<div class="km-item"><span class="km-tag">🩸 首 杀</span> 第 ${firstBlood.shotNo} 发 · ${firstBlood.shooter} ${firstBlood.self ? "自击命中实弹" : `击中 ${firstBlood.target}`}</div>`);
+    }
+    // 最大伤害单发
+    const maxDmgFire = fires.filter(e => e.is_live).sort((a, b) => (b.damage || 1) - (a.damage || 1))[0];
+    if (maxDmgFire && (maxDmgFire.damage || 1) > 1) {
+        moments.push(`<div class="km-item"><span class="km-tag">💥 致 命 一 击</span> ${maxDmgFire.player_name} 造成 ${maxDmgFire.damage} 点伤害（手锯加成）</div>`);
+    }
+    // 最长空枪连击
+    let maxBlankStreak = 0, curBlank = 0, streakStart = 0;
+    fires.forEach((e, i) => {
+        if (!e.is_live) { if (curBlank === 0) streakStart = i + 1; curBlank++; if (curBlank > maxBlankStreak) maxBlankStreak = curBlank; }
+        else { if (curBlank > maxBlankStreak) maxBlankStreak = curBlank; curBlank = 0; }
+    });
+    if (maxBlankStreak >= 3) {
+        moments.push(`<div class="km-item"><span class="km-tag">🌬 连 续 空 弹</span> 连续 ${maxBlankStreak} 发空枪，概率的仁慈</div>`);
+    }
+    // 道具大师
+    if (itemsUsed >= 3) {
+        moments.push(`<div class="km-item"><span class="km-tag">道具大师</span> 本局共使用 ${itemsUsed} 件道具</div>`);
+    }
+    // 自击实弹次数
+    const selfLiveCount = fires.filter(e => e.action === "self" && e.is_live).length;
+    if (selfLiveCount >= 2) {
+        moments.push(`<div class="km-item"><span class="km-tag">自寻死路</span> ${selfLiveCount} 次自击实弹</div>`);
+    }
+
     const betLine = STATE.lastBetResult
         ? `<p class="report-bet ${STATE.lastBetResult.win ? "win" : "lose"}">${STATE.lastBetResult.text}</p>`
         : "";
+
+    // —— 叙事摘要 ——
+    const winner = state.winner;
+    const loser = winner === p1.name ? p2.name : p1.name;
+    const winStats = winner === p1.name ? s1 : s2;
+    const summary = `历经 ${state.turn_count} 回合、${fires.length} 次开火，${winner} 以 ${winStats.live} 发实弹命中、${winStats.dmgDealt} 点伤害终结了 ${loser}。${itemsUsed > 0 ? `道具交锋 ${itemsUsed} 次，` : ""}${peeks > 0 ? `情报博弈 ${peeks} 轮，` : ""}每一次扣动扳机都是概率与胆量的较量。`;
 
     return `
         <div class="report-masthead">
@@ -1068,32 +1188,50 @@ function buildBattleReportHTML(state) {
         </blockquote>
 
         <div class="report-match">
-            <div class="rm-side">${state.p1.name}<small>${state.p1.character}</small></div>
+            <div class="rm-side">${p1.name}<small>${p1.character}</small></div>
             <div class="rm-vs">◆</div>
-            <div class="rm-side">${state.p2.name}<small>${state.p2.character}</small></div>
+            <div class="rm-side">${p2.name}<small>${p2.character}</small></div>
         </div>
         <div class="report-meta">
             <span>${modeLabel}</span><span>·</span>
             <span>${state.turn_count} 回合</span><span>·</span>
             <span>${fires.length} 次开火</span><span>·</span>
-            <span>局号 ${state.game_id || "-"}</span>
+            <span>局号 ${state.id || state.game_id || "-"}</span>
         </div>
 
-        <div class="report-stats">
-            <div class="rs-cell"><b>${fires.length}</b><span>开火</span></div>
-            <div class="rs-cell"><b>${liveShots}</b><span>实弹</span></div>
-            <div class="rs-cell"><b>${blankShots}</b><span>空枪</span></div>
-            <div class="rs-cell"><b>${selfShots}</b><span>对己</span></div>
-            <div class="rs-cell"><b>${enemyShots}</b><span>对敌</span></div>
-            <div class="rs-cell"><b>${itemsUsed}</b><span>道具</span></div>
+        <p class="report-narrative">${summary}</p>
+
+        <p class="report-section-title">— 选 手 参 数 —</p>
+        <div class="report-params-grid">
+            ${playerParams(p1, false)}
+            ${playerParams(p2, true)}
         </div>
+
+        <p class="report-section-title">— 数 据 对 比 —</p>
+        <div class="report-compare">
+            ${cmpRow("开火", s1.total, s2.total, true)}
+            ${cmpRow("实弹命中", s1.live, s2.live, true)}
+            ${cmpRow("空枪", s1.blank, s2.blank, false)}
+            ${cmpRow("自击", s1.self, s2.self, false)}
+            ${cmpRow("击敌", s1.enemy, s2.enemy, true)}
+            ${cmpRow("造成伤害", s1.dmgDealt, s2.dmgDealt, true)}
+            ${cmpRow("承受伤害", s1.dmgTaken, s2.dmgTaken, false)}
+            ${cmpRow("道具使用", s1.items, s2.items, true)}
+            ${cmpRow("自击实弹率%", Math.round(s1.selfLiveRate), Math.round(s2.selfLiveRate), false)}
+            ${cmpRow("击敌命中率%", Math.round(s1.enemyHitRate), Math.round(s2.enemyHitRate), true)}
+        </div>
+
+        ${moments.length ? `
+        <p class="report-section-title">— 关 键 时 刻 —</p>
+        <div class="report-moments">${moments.join("")}</div>
+        ` : ""}
 
         <p class="report-section-title">— 赛 事 进 程 —</p>
         <div class="report-timeline">${tl.join("")}</div>
 
         <div class="report-verdict">
             <p class="rv-eyebrow">LA MAIN EST SERVIE · 终审判决</p>
-            <h3 class="rv-winner">${state.winner}<small>最终胜者</small></h3>
+            <h3 class="rv-winner">${winner}<small>最终胜者</small></h3>
             ${betLine}
         </div>
 

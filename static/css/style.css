@@ -1692,6 +1692,161 @@ select:focus, .bet-amount:focus {
     flex-wrap: wrap;
 }
 
+/* 叙事摘要 */
+.report-narrative {
+    font-size: 0.88rem;
+    line-height: 2;
+    color: var(--text-dim);
+    text-align: justify;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    background: rgba(8, 6, 5, 0.5);
+    border-left: 2px solid var(--gold-dim);
+    border-right: 1px solid var(--line);
+}
+
+/* 选手参数 */
+.report-params-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.report-params {
+    padding: 14px 16px;
+    background: rgba(8, 6, 5, 0.5);
+    border: 1px solid var(--line);
+    border-left-width: 2px;
+}
+.report-params.side-red { border-left-color: var(--crimson-deep); }
+.report-params.side-blue { border-left-color: var(--steel-deep); }
+.rp-name {
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+    color: var(--gold-hi);
+    margin-bottom: 10px;
+}
+.rp-name small {
+    font-weight: 500;
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    color: var(--text-muted);
+    margin-left: 8px;
+}
+.rp-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 38px;
+    align-items: center;
+    gap: 8px;
+    margin: 5px 0;
+}
+.rp-label { font-size: 0.68rem; letter-spacing: 0.16em; color: var(--text-muted); }
+.rp-track {
+    height: 4px;
+    background: #0d0a08;
+    border: 1px solid var(--line);
+    overflow: hidden;
+}
+.rp-fill {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #6e5620, var(--gold));
+    box-shadow: 0 0 8px var(--gold-glow);
+}
+.rp-fill.blue { background: linear-gradient(90deg, #2b4258, var(--blue)); box-shadow: 0 0 8px var(--blue-glow); }
+.rp-value { font-size: 0.72rem; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.rp-mindset {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+}
+.rp-mindset b { color: var(--gold); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+/* 对比表 */
+.report-compare {
+    margin-bottom: 24px;
+    border: 1px solid var(--line);
+    border-left: none;
+    border-right: none;
+    padding: 6px 0;
+}
+.cmp-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 6px 20px;
+    font-size: 0.82rem;
+    transition: background 0.3s;
+}
+.cmp-row:hover { background: rgba(212, 175, 55, 0.03); }
+.cmp-val {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    transition: var(--transition);
+}
+.cmp-val:first-child { text-align: right; }
+.cmp-val:last-child { text-align: left; }
+.cmp-val.cmp-win { color: var(--gold); text-shadow: 0 0 12px var(--gold-glow); font-weight: 700; }
+.cmp-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    color: var(--text-muted);
+    padding: 0 18px;
+    white-space: nowrap;
+}
+
+/* 关键时刻 */
+.report-moments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+.km-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 16px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    background: rgba(8, 6, 5, 0.5);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--gold-dim);
+    animation: entryIn 0.35s ease both;
+}
+.km-item:nth-child(2) { animation-delay: 0.08s; }
+.km-item:nth-child(3) { animation-delay: 0.16s; }
+.km-item:nth-child(4) { animation-delay: 0.24s; }
+.km-item:nth-child(5) { animation-delay: 0.32s; }
+.km-tag {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--gold);
+    border: 1px solid rgba(212, 175, 55, 0.4);
+    padding: 1px 8px;
+    white-space: nowrap;
+}
+
+/* 决策时间线节点 */
+.tl-decision { padding-left: 14px; }
+.tl-decision .tl-dot { background: #3a2f1a; border-color: var(--gold-dim); }
+.tag-decision { color: var(--gold); border-color: rgba(212, 175, 55, 0.4); background: rgba(212, 175, 55, 0.06); }
+.tl-detail {
+    font-size: 0.74rem !important;
+    color: var(--text-muted) !important;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+.tl-detail b { color: var(--gold); }
+
 /* ==================== 响应式 ==================== */
 @media (max-width: 900px) {
     .mode-cards { grid-template-columns: repeat(2, 1fr); }
@@ -1722,6 +1877,9 @@ select:focus, .bet-amount:focus {
     .report-quote { font-size: 0.95rem; padding: 18px 8px; }
     .rm-side { font-size: 1.05rem; }
     .rv-winner { font-size: 1.5rem; }
+    .report-params-grid { grid-template-columns: 1fr; }
+    .cmp-row { padding: 6px 10px; }
+    .cmp-label { padding: 0 8px; font-size: 0.62rem; }
 }
 
 /* 无障碍：减少动效 */
