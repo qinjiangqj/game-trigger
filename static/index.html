@@ -436,6 +436,7 @@
                     <p id="game-over-message"></p>
                     <p id="game-over-bet" class="bet-result hidden"></p>
                     <button class="btn btn-gold hidden" id="btn-rematch-arena" onclick="rematchArena()">🏟️ 再战一场</button>
+                    <button class="btn btn-secondary" id="btn-view-report" onclick="openBattleReport()">📜 查看战报</button>
                     <button class="btn btn-primary" onclick="backToModes()">🔄 再来一局</button>
                 </div>
             </div>
@@ -465,6 +466,12 @@
                     <div id="tournament-final-ranking"></div>
                     <button class="btn btn-primary" onclick="backToModes()">🔄 新锦标赛</button>
                 </div>
+            </div>
+        </div>
+
+            <!-- 战报（终局生成） -->
+            <div id="battle-report" class="report-overlay hidden" onclick="if(event.target===this)closeBattleReport()">
+                <div class="report-paper" id="report-paper"></div>
             </div>
         </div>
 

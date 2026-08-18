@@ -16,6 +16,8 @@ const STATE = {
     points: null,          // 竞技场积分（localStorage 持久化）
     arenaBet: null,        // 进行中的下注 {side, amount, odds, playerName}
     autoSpeedDelay: 800,   // 自动播放步进间隔（ms）
+    lastFinalState: null,  // 终局快照（战报数据源）
+    lastBetResult: null,   // 最近一次下注结算文本（战报引用）
 };
 
 // 基准胜率（%）：10 万届循环赛，benchmarks/benchmark-20260817.md + 决斗轮盘 20260818
@@ -37,6 +39,20 @@ const PARAM_META = [
 
 const ARENA_INITIAL_POINTS = 1000;
 const ARENA_POINTS_KEY = "arena_points";
+
+// 战报开场警句（每次终局随机抽取）
+const REPORT_QUOTES = [
+    "命运从来不转轮盘。命运只扣扳机。",
+    "概率从不怜悯任何人——它只是计算。",
+    "空枪是运气，实弹是宿命。",
+    "每一次扣动扳机，都是与死神的一次握手。",
+    "子弹不认识名字，只认识概率。",
+    "恐惧不是那发实弹，而是等待它响起的间隙。",
+    "活着离开赌桌的人，不过是暂时被命运赊账。",
+    "转轮停在何处无关紧要，要紧的是你敢不敢扣。",
+];
+
+const MODE_LABELS = { classic: "经典轮盘", duel: "决斗轮盘", buckshot: "恶魔轮盘" };
 
 // 道具元数据（与 engine/items.py ITEM_REGISTRY 对应）
 const ITEM_META = {
@@ -125,11 +141,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     // 键盘快捷键（仅对战视图；输入控件聚焦时忽略）
     document.addEventListener("keydown", onHotkey);
+    // ESC 关闭战报
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeBattleReport();
+    });
 });
 
 // 快捷键：人类模式 1=射自己 2=射对方；观战模式 Space/→=下一步 A=自动播放
 function onHotkey(e) {
     if (e.target.matches("input, select, textarea, button")) return;
+    if (!document.getElementById("battle-report").classList.contains("hidden")) return;   // 战报打开时不响应
     if (!document.getElementById("game-view").classList.contains("active")) return;
     if (!STATE.currentGameId) return;
     if (!document.getElementById("game-over-modal").classList.contains("hidden")) return;
@@ -226,6 +247,7 @@ function backToModes(restoreMode) {
     $$(".mode-card").forEach(c => c.style.opacity = "1");
     document.getElementById("game-over-modal").classList.add("hidden");
     document.getElementById("tournament-over-modal").classList.add("hidden");
+    document.getElementById("battle-report").classList.add("hidden");
     hideTab("game");
     hideTab("tournament");
     switchTab("mode-select");
@@ -518,9 +540,11 @@ function settleArenaBet(state) {
         savePoints(); updatePointsUI();
         betEl.textContent = `🎉 押中 ${bet.playerName}！+${(payout - bet.amount).toLocaleString()} 积分（返还 ${payout.toLocaleString()}，赔率 ${bet.odds.toFixed(2)}）`;
         betEl.className = "bet-result win";
+        STATE.lastBetResult = { win: true, text: betEl.textContent };
     } else {
         betEl.textContent = `💸 ${bet.playerName} 落败，输掉 ${bet.amount.toLocaleString()} 积分`;
         betEl.className = "bet-result lose";
+        STATE.lastBetResult = { win: false, text: betEl.textContent };
     }
 }
 
@@ -894,6 +918,8 @@ function showGameOver(state) {
     const modal = document.getElementById("game-over-modal");
     modal.classList.remove("hidden");
     document.getElementById("game-over-message").textContent = `🏆 ${state.winner} 获胜！`;
+    STATE.lastFinalState = state;   // 战报数据源
+    STATE.lastBetResult = null;
     // 竞技场对局提供一键再战（保留选边与下注面板）
     document.getElementById("btn-rematch-arena").classList.toggle("hidden", STATE.mode !== "arena");
     if (state.p1.name === state.winner) {
@@ -904,6 +930,146 @@ function showGameOver(state) {
         document.getElementById("player1-card").classList.add("dead");
     }
     settleArenaBet(state);
+}
+
+// ===================== 终局战报 =====================
+function openBattleReport() {
+    const state = STATE.lastFinalState;
+    if (!state) { showToast("暂无可用的战报数据", "error"); return; }
+    const paper = document.getElementById("report-paper");
+    paper.innerHTML = buildBattleReportHTML(state);
+    paper.scrollTop = 0;
+    document.getElementById("battle-report").classList.remove("hidden");
+}
+
+function closeBattleReport() {
+    document.getElementById("battle-report").classList.add("hidden");
+}
+
+function buildBattleReportHTML(state) {
+    const evts = state.events || [];
+    const quote = REPORT_QUOTES[Math.floor(Math.random() * REPORT_QUOTES.length)];
+    const now = new Date();
+    const dateStr = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
+    const modeLabel = MODE_LABELS[state.mode] || state.mode;
+
+    // 统计
+    const fires = evts.filter(e => e.type === "fire");
+    const liveShots = fires.filter(e => e.is_live).length;
+    const blankShots = fires.length - liveShots;
+    const selfShots = fires.filter(e => e.action === "self").length;
+    const enemyShots = fires.filter(e => e.action === "opponent").length;
+    const itemsUsed = evts.filter(e => e.type === "item_use").length;
+
+    // 时间线节点
+    const tl = [];
+    let shotNo = 0;
+    evts.forEach(e => {
+        if (e.type === "fire") {
+            shotNo += 1;
+            const self = e.action === "self";
+            const target = self ? "自己" : (e.target_name || "对手");
+            const live = !!e.is_live;
+            let outcome;
+            if (self) outcome = live ? `命中实弹${e.damage > 1 ? ` ×${e.damage}` : ""}，付出代价` : "空枪，蝉联回合";
+            else outcome = live ? `命中${target}${e.damage > 1 ? ` ×${e.damage}` : ""}` : "空枪，回合移交";
+            tl.push(`
+                <div class="tl-node tl-fire ${live ? "live" : "blank"}">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body">
+                        <div class="tl-head">
+                            <b>${e.player_name}</b>
+                            <span class="tl-tag ${live ? "tag-live" : "tag-blank"}">${live ? "实弹" : "空枪"}</span>
+                            <span class="tl-shot">SHOT ${String(shotNo).padStart(2, "0")}</span>
+                        </div>
+                        <p>${self ? "枪口调转，对准自己" : `抬枪瞄准 ${target}`} —— ${outcome}</p>
+                    </div>
+                </div>`);
+        } else if (e.type === "item_use") {
+            const meta = ITEM_META[e.item_id] || { icon: "❔", name: e.item_id || "道具" };
+            tl.push(`
+                <div class="tl-node tl-item">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body">
+                        <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-item">道具</span></div>
+                        <p>${meta.icon} 使用了${meta.name}</p>
+                    </div>
+                </div>`);
+        } else if (e.type === "peek") {
+            tl.push(`
+                <div class="tl-node tl-item">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body">
+                        <div class="tl-head"><b>${e.player_name}</b><span class="tl-tag tag-item">情报</span></div>
+                        <p>${e.message || "窥探了弹巢的秘密"}</p>
+                    </div>
+                </div>`);
+        } else if (e.type === "damage") {
+            tl.push(`
+                <div class="tl-node tl-damage">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body"><p>${e.message || `${e.player_name} 受到伤害`}</p></div>
+                </div>`);
+        } else if (e.type === "result" || e.type === "game_over") {
+            const isSys = e.player_name === "系统";
+            tl.push(`
+                <div class="tl-node ${isSys ? "tl-sys" : "tl-final"}">
+                    <span class="tl-dot"></span>
+                    <div class="tl-body"><p>${e.message || (e.winner_name ? `${e.winner_name} 获胜` : "")}</p></div>
+                </div>`);
+        }
+    });
+
+    const betLine = STATE.lastBetResult
+        ? `<p class="report-bet ${STATE.lastBetResult.win ? "win" : "lose"}">${STATE.lastBetResult.text}</p>`
+        : "";
+
+    return `
+        <div class="report-masthead">
+            <p class="report-eyebrow">THE HOUSE LEDGER · BATTLE REPORT</p>
+            <h2 class="report-title">战 报</h2>
+            <div class="deco-divider"><span class="deco-line"></span><span class="deco-diamond">◆</span><span class="deco-line"></span></div>
+            <p class="report-date">${dateStr} · ${now.toTimeString().slice(0, 5)}</p>
+        </div>
+
+        <blockquote class="report-quote">
+            <span class="rq-orn">“</span>${quote}<span class="rq-orn">”</span>
+        </blockquote>
+
+        <div class="report-match">
+            <div class="rm-side">${state.p1.name}<small>${state.p1.character}</small></div>
+            <div class="rm-vs">◆</div>
+            <div class="rm-side">${state.p2.name}<small>${state.p2.character}</small></div>
+        </div>
+        <div class="report-meta">
+            <span>${modeLabel}</span><span>·</span>
+            <span>${state.turn_count} 回合</span><span>·</span>
+            <span>${fires.length} 次开火</span><span>·</span>
+            <span>局号 ${state.game_id || "-"}</span>
+        </div>
+
+        <div class="report-stats">
+            <div class="rs-cell"><b>${fires.length}</b><span>开火</span></div>
+            <div class="rs-cell"><b>${liveShots}</b><span>实弹</span></div>
+            <div class="rs-cell"><b>${blankShots}</b><span>空枪</span></div>
+            <div class="rs-cell"><b>${selfShots}</b><span>对己</span></div>
+            <div class="rs-cell"><b>${enemyShots}</b><span>对敌</span></div>
+            <div class="rs-cell"><b>${itemsUsed}</b><span>道具</span></div>
+        </div>
+
+        <p class="report-section-title">— 赛 事 进 程 —</p>
+        <div class="report-timeline">${tl.join("")}</div>
+
+        <div class="report-verdict">
+            <p class="rv-eyebrow">LA MAIN EST SERVIE · 终审判决</p>
+            <h3 class="rv-winner">${state.winner}<small>最终胜者</small></h3>
+            ${betLine}
+        </div>
+
+        <div class="report-actions">
+            <button class="btn btn-gold" onclick="window.print()">🖨 打印 / 存为 PDF</button>
+            <button class="btn btn-secondary" onclick="closeBattleReport()">✕ 关闭战报</button>
+        </div>`;
 }
 
 // ===================== 游戏操作 =====================
