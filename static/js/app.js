@@ -80,7 +80,9 @@ function triggerGunRecoil() {
 }
 
 function triggerChamberFire(isLive) {
-    const chambers = $$(".chamber-slot");
+    // 决斗模式优先在当前行动方的枪上播放击发特效
+    let chambers = $$(".duel-gun.active-gun .chamber-slot");
+    if (!chambers.length) chambers = $$(".chamber-slot");
     const currentIdx = chambers.findIndex(c => c.classList.contains("current"));
     if (currentIdx >= 0) {
         const c = chambers[currentIdx];
@@ -670,11 +672,14 @@ function updatePlayerCard(side, player, isCurrent) {
     }
 }
 
+// 圆形转轮弹仓：槽位按角度环绕中心，中央轮轴显示剩余弹数
 function renderChamber(container, gun, isGameOver, knownShells) {
     container.innerHTML = "";
-    for (let i = 0; i < gun.total_slots; i++) {
+    const n = gun.total_slots;
+    for (let i = 0; i < n; i++) {
         const slot = document.createElement("div");
         slot.classList.add("chamber-slot");
+        slot.style.setProperty("--angle", `${(360 / n) * i}deg`);
         if (i < gun.pointer) slot.classList.add("fired");
         else if (i === gun.pointer && !isGameOver) slot.classList.add("current");
         const offset = i - gun.pointer;
@@ -684,6 +689,11 @@ function renderChamber(container, gun, isGameOver, knownShells) {
         }
         container.appendChild(slot);
     }
+    const hub = document.createElement("div");
+    hub.className = "chamber-hub";
+    hub.title = "剩余弹数";
+    hub.innerHTML = `<b>${gun.remaining_slots}</b><i>/${gun.total_slots}</i>`;
+    container.appendChild(hub);
 }
 
 function updateDuelGunDisplay(state, isGameOver) {

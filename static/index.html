@@ -3,49 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 俄罗斯轮盘大逃杀</title>
+    <title>俄罗斯轮盘 · 大逃杀 — House of Fortune</title>
+    <link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+    <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
+    <link href="https://fonts.loli.net/css2?family=Cinzel:wght@500;700;900&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div id="app">
-        <!-- 顶部导航 -->
+        <!-- 顶部 -->
         <header class="header">
-            <h1>🔫 AI 俄罗斯轮盘大逃杀</h1>
+            <p class="header-eyebrow">HOUSE OF FORTUNE · EST. MMXXVI</p>
+            <h1><span class="h1-ai">AI</span>俄罗斯轮盘<span class="h1-sep">◆</span>大逃杀</h1>
+            <p class="header-sub">六位赌徒 · 一把左轮 · 概率即命运</p>
+            <div class="deco-divider" aria-hidden="true">
+                <span class="deco-line"></span><span class="deco-diamond">◆</span><span class="deco-line"></span>
+            </div>
             <nav class="tabs">
-                <button class="tab active" data-tab="mode-select">🎮 选择模式</button>
-                <button class="tab" data-tab="game-view" style="display:none" id="tab-game">⚔️ 对战</button>
-                <button class="tab" data-tab="tournament-view" style="display:none" id="tab-tournament">🏆 锦标赛</button>
+                <button class="tab active" data-tab="mode-select">选 择 赌 桌</button>
+                <button class="tab" data-tab="game-view" style="display:none" id="tab-game">对 战</button>
+                <button class="tab" data-tab="tournament-view" style="display:none" id="tab-tournament">锦 标 赛</button>
             </nav>
         </header>
 
-        <!-- 模式选择 -->
+        <!-- 赌桌选择 -->
         <div id="mode-select" class="view active">
             <div class="mode-cards">
                 <div class="mode-card" onclick="selectMode('human-vs-ai')">
+                    <span class="card-numeral">Ⅰ</span>
                     <div class="mode-icon">🧑‍💻</div>
                     <h3>人类 vs AI</h3>
-                    <p>你亲自上场，和AI一决高下</p>
+                    <p>亲自上桌，与 AI 一决生死</p>
+                    <span class="card-enter">TAKE A SEAT</span>
                 </div>
                 <div class="mode-card" onclick="selectMode('ai-vs-ai')">
+                    <span class="card-numeral">Ⅱ</span>
                     <div class="mode-icon">🤖</div>
                     <h3>AI vs AI 观战</h3>
-                    <p>观看AI之间的智力对决</p>
+                    <p>围观两台思维机器互相残杀</p>
+                    <span class="card-enter">SPECTATE</span>
                 </div>
                 <div class="mode-card" onclick="selectMode('tournament')">
+                    <span class="card-numeral">Ⅲ</span>
                     <div class="mode-icon">🏆</div>
                     <h3>AI 锦标赛</h3>
-                    <p>6个AI大混战，循环赛制</p>
+                    <p>六人循环赛 · 积分定尊卑</p>
+                    <span class="card-enter">ROUND ROBIN</span>
                 </div>
                 <div class="mode-card" onclick="selectMode('arena')">
-                    <div class="mode-icon">🏟️</div>
+                    <span class="card-numeral">Ⅳ</span>
+                    <div class="mode-icon">🎰</div>
                     <h3>模型竞技场</h3>
-                    <p>各持一把 1v1 决斗，下注观战赢积分</p>
+                    <p>各持一把 1v1 决斗 · 下注赢积分</p>
+                    <span class="card-enter">PLACE YOUR BETS</span>
                 </div>
             </div>
 
             <!-- 人类 vs AI 配置 -->
             <div id="human-vs-ai-config" class="config-panel hidden">
-                <h2>🧑‍💻 人类 vs AI</h2>
+                <p class="panel-eyebrow">TABLE Ⅰ — MAN VS MACHINE</p>
+                <h2>人类 vs AI</h2>
+                <div class="panel-rule"></div>
                 <div class="config-row">
                     <div class="config-col">
                         <label>你的对手</label>
@@ -89,13 +107,15 @@
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="startHumanVsAI()">⚔️ 开始对战</button>
+                <button class="btn btn-primary" onclick="startHumanVsAI()">开 始 对 战</button>
                 <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
             </div>
 
             <!-- AI vs AI 配置 -->
             <div id="ai-vs-ai-config" class="config-panel hidden">
-                <h2>🤖 AI vs AI 观战</h2>
+                <p class="panel-eyebrow">TABLE Ⅱ — SPECTATOR'S LOUNGE</p>
+                <h2>AI vs AI 观战</h2>
+                <div class="panel-rule"></div>
                 <div class="config-row">
                     <div class="config-col">
                         <label>选手A</label>
@@ -143,13 +163,15 @@
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="startAIvsAI()">👀 开始观战</button>
+                <button class="btn btn-primary" onclick="startAIvsAI()">开 始 观 战</button>
                 <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
             </div>
 
             <!-- 模型竞技场配置 -->
             <div id="arena-config" class="config-panel hidden">
-                <h2>🏟️ 模型竞技场</h2>
+                <p class="panel-eyebrow">TABLE Ⅳ — FAITES VOS JEUX</p>
+                <h2>模型竞技场</h2>
+                <div class="panel-rule"></div>
                 <p class="arena-intro">
                     两名 AI 模型各持一把随机装填的轮盘，依次开枪决出胜负。
                     下注前可查看选手性格参数与历史战绩，押中赢家按赔率赢取积分。
@@ -158,13 +180,13 @@
                 <!-- 选边 -->
                 <div class="arena-pick">
                     <div class="arena-side">
-                        <div class="arena-side-title red">🔴 红方</div>
+                        <div class="arena-side-title red">红 方</div>
                         <div class="fighter-grid" id="arena-red-grid"></div>
                         <div class="fighter-intel" id="arena-red-intel"></div>
                     </div>
                     <div class="arena-vs">VS</div>
                     <div class="arena-side">
-                        <div class="arena-side-title blue">🔵 蓝方</div>
+                        <div class="arena-side-title blue">蓝 方</div>
                         <div class="fighter-grid" id="arena-blue-grid"></div>
                         <div class="fighter-intel" id="arena-blue-intel"></div>
                     </div>
@@ -176,16 +198,16 @@
                 <!-- 积分与下注 -->
                 <div class="arena-bet-panel">
                     <div class="arena-points">
-                        <span>💰 我的积分：<b id="arena-points-value">1,000</b></span>
+                        <span>筹码积分：<b id="arena-points-value">1,000</b></span>
                         <button class="btn-link hidden" id="arena-reset-points" onclick="arenaResetPoints()">破产？点此重置</button>
                     </div>
                     <div class="arena-bet-form">
-                        <label class="bet-side red"><input type="radio" name="bet-side" value="red" onchange="refreshArenaIntel()">🔴 红方 <span class="odds-chip" id="odds-red">--</span></label>
-                        <label class="bet-side blue"><input type="radio" name="bet-side" value="blue" onchange="refreshArenaIntel()">🔵 蓝方 <span class="odds-chip" id="odds-blue">--</span></label>
+                        <label class="bet-side red"><input type="radio" name="bet-side" value="red" onchange="refreshArenaIntel()">押 红 方 <span class="odds-chip" id="odds-red">--</span></label>
+                        <label class="bet-side blue"><input type="radio" name="bet-side" value="blue" onchange="refreshArenaIntel()">押 蓝 方 <span class="odds-chip" id="odds-blue">--</span></label>
                         <input type="number" class="bet-amount" id="bet-amount" value="100" min="10" step="10">
                         <button class="btn btn-gold" id="btn-bet-start" onclick="startArena(true)">🎯 下注开战</button>
                     </div>
-                    <div class="arena-bet-note">赔率由双方历史胜率推导；不选边则不下注，仅观战</div>
+                    <div class="arena-bet-note">赔率由双方历史胜率推导 · 不选边则不下注，仅观战</div>
                 </div>
 
                 <div class="config-row">
@@ -228,13 +250,15 @@
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="startArena(false)">🚀 直接开战观战</button>
+                <button class="btn btn-primary" onclick="startArena(false)">直 接 开 战</button>
                 <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
             </div>
 
             <!-- 锦标赛配置 -->
             <div id="tournament-config" class="config-panel hidden">
-                <h2>🏆 AI 锦标赛</h2>
+                <p class="panel-eyebrow">TABLE Ⅲ — ROUND ROBIN</p>
+                <h2>AI 锦标赛</h2>
+                <div class="panel-rule"></div>
                 <div class="config-row">
                     <div class="config-col">
                         <label>选手数量</label>
@@ -280,7 +304,7 @@
                         </select>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="startTournament()">🏆 开始锦标赛</button>
+                <button class="btn btn-primary" onclick="startTournament()">开 始 锦 标 赛</button>
                 <button class="btn btn-secondary" onclick="backToModes()">← 返回</button>
             </div>
         </div>
@@ -310,41 +334,41 @@
                             <span class="stat-value" id="p1-mindset">0.00</span>
                         </div>
                         <div class="stat-row">
-                            <span>连</span><span id="p1-streak">--</span>
+                            <span>连庄</span><span id="p1-streak">--</span>
                         </div>
                     </div>
-                    <div class="player-indicator hidden" id="p1-indicator">⚡ 当前回合</div>
+                    <div class="player-indicator hidden" id="p1-indicator">当前回合</div>
                 </div>
 
                 <div class="vs-divider">
                     <div class="gun-display" id="gun-display">
                         <div class="gun-icon">🔫</div>
+                        <div class="chamber-visual" id="chamber-visual"></div>
                         <div class="gun-info">
                             <span id="gun-remaining">6/6 剩余</span>
                             <span id="gun-live">实弹: 1</span>
                             <span id="gun-blank" class="hidden">空弹: 0</span>
                         </div>
-                        <div class="chamber-visual" id="chamber-visual"></div>
                     </div>
                     <div class="gun-display-duel hidden" id="gun-display-duel">
                         <div class="duel-gun" id="duel-gun-1">
                             <div class="duel-gun-header"><span>🔫</span><span class="duel-gun-name" id="duel-gun-1-name">--</span></div>
+                            <div class="chamber-visual" id="duel-gun-1-visual"></div>
                             <div class="gun-info">
                                 <span id="duel-gun-1-remaining">6/6 剩余</span>
                                 <span id="duel-gun-1-live">实弹: 1</span>
                             </div>
-                            <div class="chamber-visual" id="duel-gun-1-visual"></div>
                         </div>
                         <div class="duel-gun" id="duel-gun-2">
                             <div class="duel-gun-header"><span>🔫</span><span class="duel-gun-name" id="duel-gun-2-name">--</span></div>
+                            <div class="chamber-visual" id="duel-gun-2-visual"></div>
                             <div class="gun-info">
                                 <span id="duel-gun-2-remaining">6/6 剩余</span>
                                 <span id="duel-gun-2-live">实弹: 1</span>
                             </div>
-                            <div class="chamber-visual" id="duel-gun-2-visual"></div>
                         </div>
                     </div>
-                    <span class="vs-text">VS</span>
+                    <span class="vs-text">VERSUS</span>
                     <div class="turn-indicator" id="turn-indicator"></div>
                 </div>
 
@@ -370,20 +394,20 @@
                             <span class="stat-value" id="p2-mindset">0.00</span>
                         </div>
                         <div class="stat-row">
-                            <span>连</span><span id="p2-streak">--</span>
+                            <span>连庄</span><span id="p2-streak">--</span>
                         </div>
                     </div>
-                    <div class="player-indicator hidden" id="p2-indicator">⚡ 当前回合</div>
+                    <div class="player-indicator hidden" id="p2-indicator">当前回合</div>
                 </div>
             </div>
 
-            <!-- 事件日志 -->
+            <!-- 账簿日志 -->
             <div class="event-log" id="event-log">
-                <div class="event-log-header">📜 对战日志</div>
+                <div class="event-log-header">对 战 日 志</div>
                 <div class="event-log-content" id="event-log-content"></div>
             </div>
 
-            <!-- 操作按钮 -->
+            <!-- 操作台 -->
             <div class="action-bar" id="action-bar">
                 <div id="human-actions" class="hidden">
                     <div class="item-action-row hidden" id="human-item-actions"></div>
@@ -404,10 +428,11 @@
                 </div>
             </div>
 
-            <!-- 游戏结束弹窗 -->
+            <!-- 终局弹窗 -->
             <div id="game-over-modal" class="modal hidden">
                 <div class="modal-content">
-                    <h2 id="game-over-title">🏆 游戏结束</h2>
+                    <p class="panel-eyebrow">GAME OVER — LA MAIN EST SERVIE</p>
+                    <h2 id="game-over-title">终 局</h2>
                     <p id="game-over-message"></p>
                     <p id="game-over-bet" class="bet-result hidden"></p>
                     <button class="btn btn-gold hidden" id="btn-rematch-arena" onclick="rematchArena()">🏟️ 再战一场</button>
@@ -419,14 +444,12 @@
         <!-- 锦标赛视图 -->
         <div id="tournament-view" class="view">
             <div class="tournament-layout">
-                <!-- 赛程表 -->
                 <div class="tournament-schedule" id="tournament-schedule">
-                    <h2>📋 赛程</h2>
+                    <h2>赛 程</h2>
                     <div id="schedule-list"></div>
                 </div>
-                <!-- 积分榜 -->
                 <div class="tournament-main">
-                    <h2>📊 积分榜</h2>
+                    <h2>积 分 榜</h2>
                     <div id="scoreboard"></div>
                     <div class="tournament-current" id="tournament-current"></div>
                     <div class="action-bar">
@@ -437,12 +460,17 @@
             </div>
             <div id="tournament-over-modal" class="modal hidden">
                 <div class="modal-content">
-                    <h2>🏆 锦标赛结束</h2>
+                    <p class="panel-eyebrow">FINAL STANDINGS</p>
+                    <h2>锦 标 赛 终 局</h2>
                     <div id="tournament-final-ranking"></div>
                     <button class="btn btn-primary" onclick="backToModes()">🔄 新锦标赛</button>
                 </div>
             </div>
         </div>
+
+        <footer class="footer">
+            <p>FAITES VOS JEUX — 请下注 · RIEN NE VA PLUS</p>
+        </footer>
     </div>
 
     <script src="/static/js/app.js"></script>
