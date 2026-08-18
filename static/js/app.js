@@ -1067,7 +1067,6 @@ function buildBattleReportHTML(state) {
         </div>
 
         <div class="report-actions">
-            <button class="btn btn-gold" onclick="window.print()">🖨 打印 / 存为 PDF</button>
             <button class="btn btn-secondary" onclick="closeBattleReport()">✕ 关闭战报</button>
         </div>`;
 }

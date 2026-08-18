@@ -1692,49 +1692,6 @@ select:focus, .bet-amount:focus {
     flex-wrap: wrap;
 }
 
-/* 打印：只输出战报，转为纸面配色 */
-@media print {
-    body::before, body::after { display: none !important; }
-    body { background: #fff !important; }
-    #app { display: none !important; }
-    .toast-container { display: none !important; }
-    .report-overlay {
-        position: static;
-        background: none !important;
-        backdrop-filter: none;
-        padding: 0;
-        overflow: visible;
-        animation: none;
-    }
-    .report-paper {
-        width: 100%;
-        border-color: #8a7135;
-        outline: none;
-        box-shadow: none;
-        background: #fff !important;
-        animation: none;
-        padding: 20px 8px;
-    }
-    .report-title, .rv-winner, .report-quote, .intel-name { -webkit-text-fill-color: #3a2d10; }
-    .report-title, .rv-winner, .report-quote, .rs-cell b { color: #3a2d10 !important; text-shadow: none !important; }
-    .report-quote { color: #4a3a16 !important; }
-    .report-eyebrow, .report-date, .report-meta, .rs-cell span,
-    .report-section-title, .rv-eyebrow, .rv-winner small { color: #6b5c3e !important; }
-    .rm-side { color: #1e1a12 !important; }
-    .rm-side small, .tl-shot, .tl-sys .tl-body p { color: #7a6f5d !important; }
-    .tl-head b, .tl-body p { color: #2c261a !important; }
-    .tl-fire.live .tl-body p, .tl-damage .tl-body p { color: #7c1f2a !important; }
-    .tl-final .tl-body p { color: #3a2d10 !important; }
-    .deco-line { background: #a08a50 !important; }
-    .deco-diamond, .rm-vs, .rq-orn { color: #8a2a34 !important; }
-    .report-stats { border-color: #b5a26a !important; }
-    .rs-cell { border-color: #d8ccaa !important; }
-    .report-timeline::before { background: #b5a26a !important; }
-    .report-verdict { border-color: #b5a26a !important; }
-    .report-actions { display: none !important; }
-    .tl-node { animation: none; }
-}
-
 /* ==================== 响应式 ==================== */
 @media (max-width: 900px) {
     .mode-cards { grid-template-columns: repeat(2, 1fr); }
