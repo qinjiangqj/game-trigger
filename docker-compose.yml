@@ -3,23 +3,6 @@ version: "3.9"
 services:
   game:
     build: .
-    expose:
-      - "8000"            # 仅容器网络可见，不暴露到公网（由 caddy 反代）
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data          # 证书与状态持久化（自动续期）
-      - caddy_config:/config
-    depends_on:
-      - game
-
-volumes:
-  caddy_data:
-  caddy_config:
+      - "8000:8000"
+    restart: unless-stopped

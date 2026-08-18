@@ -95,24 +95,6 @@ curl http://localhost:8000/health   # {"status":"ok"} 即部署成功
 
 浏览器访问 `http://<服务器IP>:8000`。
 
-### 可选：Caddy 自动 HTTPS（Docker，推荐）
-
-仓库已内置 `Caddyfile` 与双服务版 `docker-compose.yml`（app + caddy）。Caddy 会自动签发并续期 Let's Encrypt 证书，无需手动管证书：
-
-1. **域名解析**：把你的域名（如 `trigger.game.luxlife.top`）A 记录指向服务器 IP。
-2. **放行端口**：云安全组与服务器防火墙放行 `80/tcp` 与 `443/tcp`：
-   ```bash
-   sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
-   ```
-3. **改 Caddyfile**：把 `Caddyfile` 里的域名换成你自己的（仓库默认即 `trigger.game.luxlife.top`）。
-4. **一键启动**：
-   ```bash
-   docker compose up -d --build
-   ```
-   首次启动约 20–60 秒内 Caddy 自动申请证书。访问 `https://<你的域名>` 即可。
-   - 查看证书签发日志：`docker compose logs -f caddy`
-   - WebSocket 观战链路由 Caddy 默认透传，无需额外配置
-
 ### 可选：Nginx 反向代理（域名 + HTTPS）
 
 ```nginx

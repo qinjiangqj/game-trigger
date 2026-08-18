@@ -1,8 +1,0 @@
-# Caddy 反向代理：自动 HTTPS（Let's Encrypt）+ WebSocket 透传
-# 把域名改成你自己的；DNS 需已解析到本服务器，80/443 端口放行后启动即可自动签证书。
-trigger.game.luxlife.top {
-	encode gzip
-
-	# WebSocket 与普通 HTTP 均由 reverse_proxy 透传（Caddy 默认处理 Upgrade 头）
-	reverse_proxy game:8000
-}
